@@ -14,7 +14,7 @@ type OriginalsDirectory struct {
 
 type Config struct {
 	WallpaperFile        string
-	UsedWallpapersFile   string
+	UsedWallpapersDBDir  string
 	TempDirectory        string
 	Waifu2x              string
 	ImageMagick          string
@@ -58,16 +58,16 @@ func (c *Config) validate() error {
 		return fmt.Errorf("WallpaperFile [%s] is not a regular file", c.WallpaperFile)
 	}
 
-	if c.UsedWallpapersFile == "" {
-		return fmt.Errorf("Config missing UsedWallpapersFile")
+	if c.UsedWallpapersDBDir == "" {
+		return fmt.Errorf("Config missing UsedWallpapersDBDir")
 	}
 
-	fi, err = os.Stat(c.UsedWallpapersFile)
+	fi, err = os.Stat(c.UsedWallpapersDBDir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	if !os.IsNotExist(err) && !fi.Mode().IsRegular() {
-		return fmt.Errorf("UsedWallpapersFile [%s] is not a regular file", c.UsedWallpapersFile)
+	if !os.IsNotExist(err) && fi.Mode().IsRegular() {
+		return fmt.Errorf("UsedWallpapersDBDir [%s] is not a directory", c.UsedWallpapersDBDir)
 	}
 
 	if c.TempDirectory == "" {

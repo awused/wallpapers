@@ -9,8 +9,6 @@ import (
 
 //const errorLog = `C:\Logs\resync-wallpaper-cache-error.log`
 
-// Deletes all png files that don't correspond to an existing original wallpaper
-// Does not remove cached wallpapers for monitors that don't exist, users will have to remove those manually
 func main() {
 	//f, err := os.OpenFile(errorLog, os.O_RDWR | os.O_CREATE | os.O_APPEND, 0666)
 	//if err != nil {
@@ -47,7 +45,7 @@ func main() {
 				if err != nil {
 					log.Fatal(err)
 				}
-				oldOutFile, err := lib.GetOldCachedImagePath(inputAbsPath, m)
+				oldOutFile, err := lib.GetOldCacheImagePath(inp, relPath, m)
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -56,7 +54,7 @@ func main() {
 					log.Fatal(err)
 				}
 
-				// Old file is invalid, don't rename
+				// If the old file is invalid, don't rename
 				doScale, err := lib.ShouldProcessImage(inputAbsPath, oldOutFile)
 				if err != nil {
 					log.Fatal(err.Error())
@@ -86,13 +84,3 @@ func main() {
 		}
 	}
 }
-
-/*
-func GetOldCachedImagePath(img string, m *Monitor) (string, error) {
-    c, err := GetConfig()
-    if err != nil { return "", err }
-
-    h := sha256.Sum256([]byte(img))
-    return filepath.Join(getMonitorCacheDirectory(c.CacheDirectory, m), hex.EncodeToString(h[:]) + ".png"), nil
-}
-*/
