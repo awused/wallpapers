@@ -28,7 +28,7 @@ const backupModel = `models\anime_style_art_rgb`
 
 // Default mode is to completely fill the target width and height and crop, touch=true only scales the image to touch the insides of the rectangle
 // Set denoise=false when the image has already been denoised. Don't double the same image multiple times, instead call this once for each necessary scaling factor
-func ProcessImage(inFile, outFile string, width, height int32, touch, denoise bool) error {
+func ProcessImage(inFile, outFile string, width, height int32, touch, denoise, flatten bool) error {
 	c, err := GetConfig()
 	if err != nil {
 		return err
@@ -64,9 +64,9 @@ func ProcessImage(inFile, outFile string, width, height int32, touch, denoise bo
 		if err != nil {
 			return err
 		}
-		return imResize(tempFile, outFile, width, height, touch, c.ImageMagick)
+		return imResize(tempFile, outFile, width, height, touch, flatten, c.ImageMagick)
 	} else {
-		return imResize(validInFile, outFile, width, height, touch, c.ImageMagick)
+		return imResize(validInFile, outFile, width, height, touch, flatten, c.ImageMagick)
 	}
 }
 
@@ -180,14 +180,28 @@ func getImageConfig(inFile, tempDir string) (string, *image.Config, error) {
 	return inFile, &img, nil
 }
 
-func imResize(inFile, outFile string, width, height int32, touch bool, imageMagick string) error {
+func imResize(inFile, outFile string, width, height int32, touch, flatten bool, imageMagick string) error {
 	resStr := fmt.Sprintf("%dx%d", width, height)
 	modeStr := "^"
 	if touch {
 		modeStr = ""
 	}
 
-	args := []string{"convert", inFile, "-filter", "Lanczos", "-resize", resStr + modeStr, "-gravity", "center", "-crop", resStr + "+0+0", outFile}
+	args := []string{
+		"convert", inFile,
+		"-filter", "Lanczos",
+		"-resize", resStr + modeStr,
+		"-gravity", "center",
+		"-crop", resStr + "+0+0"}
+
+	if flatten {
+		// Transparency appears to break when using waifu2x-caffe
+		// May be able to revisit in the future, but for now just flatten
+		args = append(args, "-flatten")
+	}
+
+	args = append(args, outFile)
+
 	cmd := exec.Command(imageMagick, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd.Run()

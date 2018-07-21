@@ -1,6 +1,7 @@
-package changewallpaperlib
-
+// +build ignore
 // TODO -- Remove this file
+
+package changewallpaperlib
 
 import (
 	"fmt"
@@ -10,6 +11,7 @@ import (
 
 // Assumes it is being passed images that have already been scaled for the monitors
 func CombineImages(images []string, monitors []*Monitor, outFile string) error {
+	return nil
 	c, err := GetConfig()
 	if err != nil {
 		return err

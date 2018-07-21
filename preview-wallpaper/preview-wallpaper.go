@@ -15,7 +15,7 @@ const errorLog = `C:\Logs\preview-wallpaper-error.log`
 func main() {
 	f, err := os.OpenFile(errorLog, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
-		log.Fatalf("Error opening file: %v", err)
+		log.Fatalf("Error opening log file: %v", err)
 	}
 	defer f.Close()
 
@@ -28,15 +28,11 @@ func main() {
 	w := os.Args[1]
 
 	c, err := lib.ReadConfig()
-	if err != nil {
-		log.Fatal(err)
-	}
+	checkErr(err)
 	defer lib.Cleanup()
 
 	monitors, err := lib.GetMonitors()
-	if err != nil {
-		log.Fatal(err)
-	}
+	checkErr(err)
 
 	outFiles := make([]string, len(monitors))
 	scalingFactors := make([]int, len(monitors))
@@ -44,42 +40,45 @@ func main() {
 
 MonitorLoop:
 	for i, m := range monitors {
-		outFiles[i] = filepath.Join(c.TempDirectory, strconv.Itoa(i)+"-preview.png")
-		scalingFactors[i], err = lib.GetScalingFactor(w, m.Width, m.Height, false)
-		if err != nil {
-			log.Fatal(err)
+		outFiles[i] = filepath.Join(
+			c.TempDirectory,
+			strconv.Itoa(int(m.Width))+"x"+strconv.Itoa(int(m.Height))+"-prvw.png")
+		m.Wallpaper = outFiles[i]
+
+		for _, s := range outFiles[:i] {
+			if outFiles[i] == s {
+				continue MonitorLoop
+			}
 		}
+
+		scalingFactors[i], err = lib.GetScalingFactor(w, m.Width, m.Height, false)
+		checkErr(err)
 
 		for j, s := range scalingFactors[:i] {
 			if scalingFactors[i] == s {
-				err = lib.ProcessImage(scaledFiles[j], outFiles[i], m.Width, m.Height, false, false)
-				if err != nil {
-					log.Fatal(err)
-				}
+				err = lib.ProcessImage(scaledFiles[j], outFiles[i], m.Width, m.Height, false, false, true)
+				checkErr(err)
 
 				continue MonitorLoop
 			}
 		}
 
 		scaledFiles[i], err = lib.GetScaledIntermediateFile(outFiles[i], scalingFactors[i])
-		if err != nil {
-			log.Fatal(err)
-		}
+		checkErr(err)
 
-		err = lib.ProcessImage(w, outFiles[i], m.Width, m.Height, false, true)
-		if err != nil {
-			log.Fatal(err)
-		}
-
+		err = lib.ProcessImage(w, outFiles[i], m.Width, m.Height, false, true, true)
+		checkErr(err)
 	}
 
-	for i, m := range monitors {
-		err = lib.SetMonitorWallpaper(m, outFiles[i])
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
+	err = lib.SetMonitorWallpapers(monitors)
+	checkErr(err)
 
 	// Windows will fail to read the wallpapers if we delete them too fast
 	<-time.After(5 * time.Second)
+}
+
+func checkErr(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
 }

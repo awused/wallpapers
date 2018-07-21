@@ -92,7 +92,7 @@ func main() {
 				for j, s := range scalingFactors[:i] {
 					if scalingFactors[i] == s {
 						match = true
-						err = lib.ProcessImage(scaledFiles[j], wipFile, m.Width, m.Height, false, false)
+						err = lib.ProcessImage(scaledFiles[j], wipFile, m.Width, m.Height, false, false, true)
 						if err != nil {
 							log.Fatal(err)
 						}
@@ -107,7 +107,7 @@ func main() {
 						log.Fatal(err)
 					}
 
-					lib.ProcessImage(absPath, wipFile, m.Width, m.Height, false, true)
+					lib.ProcessImage(absPath, wipFile, m.Width, m.Height, false, true, true)
 				}
 
 				err = os.Rename(wipFile, outFile)

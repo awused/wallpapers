@@ -71,7 +71,7 @@ func main() {
 	}
 	checkErr(err)
 
-	scaledFiles := make([]string, len(monitors))
+	//scaledFiles := make([]string, len(monitors))
 	for i, inputId := range fileIDs {
 		m := monitors[i]
 		inputDirectory := inputDirectories[fileLookups[inputId][0]]
@@ -79,20 +79,22 @@ func main() {
 		inputAbsPath, err := lib.GetFullInputPath(inputDirectory, inputRelPath)
 		checkErr(err)
 
-		scaledFiles[i], err = lib.GetCacheImagePath(inputDirectory, inputRelPath, m)
+		scaledFile, err := lib.GetCacheImagePath(inputDirectory, inputRelPath, m)
 		checkErr(err)
 
-		doScale, err := lib.ShouldProcessImage(inputAbsPath, scaledFiles[i])
+		doScale, err := lib.ShouldProcessImage(inputAbsPath, scaledFile)
 		checkErr(err)
 
 		if doScale {
-			err = lib.ProcessImage(inputAbsPath, scaledFiles[i], m.Width, m.Height, false, true)
+			err = lib.ProcessImage(inputAbsPath, scaledFile, m.Width, m.Height, false, true, true)
 			checkErr(err)
 		}
 
-		err = lib.SetMonitorWallpaper(m, scaledFiles[i])
-		checkErr(err)
+		m.Wallpaper = scaledFile
 	}
+
+	err = lib.SetMonitorWallpapers(monitors)
+	checkErr(err)
 
 	//err = lib.CombineImages(scaledFiles, monitors, c.WallpaperFile)
 	//checkErr(err)
