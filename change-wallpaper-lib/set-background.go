@@ -1,19 +1,49 @@
 package changewallpaperlib
 
 import (
-	"golang.org/x/sys/windows/registry"
-	"os"
+	"fmt"
 	"syscall"
 	"unsafe"
+
+	ole "github.com/go-ole/go-ole"
+	"golang.org/x/sys/windows/registry"
 )
 
-// Will convert the PNG wallpaper down to a JPEG if it is too large
-func ChangeBackground() error {
-	c, err := GetConfig()
+func SetMonitorWallpaper(m *Monitor, wallpaper string) error {
+	//c, _ := GetConfig()
+	//if err != nil {
+	//	return err
+	//}
+	//_ = SetRegistryKeys(c)
+
+	ole.CoInitialize(0)
+	defer ole.CoUninitialize()
+
+	desktop, err := ole.CreateInstance(
+		ole.NewGUID(CLSID),
+		ole.NewGUID(IID))
 	if err != nil {
 		return err
 	}
 
+	vtable := (*IDesktopWallpaperVtbl)(unsafe.Pointer(desktop.RawVTable))
+
+	hr, _, _ := syscall.Syscall(
+		vtable.SetWallpaper,
+		3,
+		uintptr(unsafe.Pointer(desktop)),
+		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(m.Path))),
+		uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(wallpaper))))
+	if hr != 0 {
+		return fmt.Errorf("Unexpected value from SetWallpaper %d", hr)
+	}
+
+	return nil
+}
+
+// TODO -- This is likely no longer necessary
+// Replace with calls to SetPosition
+func SetRegistryKeys(c *Config) error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, `Control Panel\Desktop`, registry.SET_VALUE)
 	if err != nil {
 		return err
@@ -31,7 +61,18 @@ func ChangeBackground() error {
 	}
 
 	err = k.SetDWordValue("JPEGImportQuality", 100)
+	return err
+}
+
+// Will convert the PNG wallpaper down to a JPEG if it is too large
+// TODO -- Remove
+/*func ChangeBackground() error {
+	c, err := GetConfig()
 	if err != nil {
+		return err
+	}
+
+	if err = SetRegistryKeys(c); err != nil {
 		return err
 	}
 
@@ -61,4 +102,4 @@ func ChangeBackground() error {
 	}
 
 	return nil
-}
+}*/

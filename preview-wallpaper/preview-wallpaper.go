@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	lib "github.com/awused/windows-wallpapers/change-wallpaper-lib"
 )
@@ -43,7 +44,7 @@ func main() {
 
 MonitorLoop:
 	for i, m := range monitors {
-		outFiles[i] = filepath.Join(c.TempDirectory, strconv.Itoa(i)+"-preview.bmp")
+		outFiles[i] = filepath.Join(c.TempDirectory, strconv.Itoa(i)+"-preview.png")
 		scalingFactors[i], err = lib.GetScalingFactor(w, m.Width, m.Height, false)
 		if err != nil {
 			log.Fatal(err)
@@ -69,15 +70,16 @@ MonitorLoop:
 		if err != nil {
 			log.Fatal(err)
 		}
+
 	}
 
-	err = lib.CombineImages(outFiles, monitors, c.WallpaperFile)
-	if err != nil {
-		log.Fatal(err)
+	for i, m := range monitors {
+		err = lib.SetMonitorWallpaper(m, outFiles[i])
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
-	err = lib.ChangeBackground()
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Windows will fail to read the wallpapers if we delete them too fast
+	<-time.After(5 * time.Second)
 }

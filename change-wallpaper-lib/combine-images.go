@@ -1,5 +1,7 @@
 package changewallpaperlib
 
+// TODO -- Remove this file
+
 import (
 	"fmt"
 	"os/exec"

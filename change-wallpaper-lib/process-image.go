@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	_ "golang.org/x/image/bmp"
 	"image"
 	_ "image/gif"
 	_ "image/jpeg"
@@ -15,6 +14,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+
+	_ "golang.org/x/image/bmp"
 	//"strings"
 	"syscall"
 	"time"
@@ -252,7 +253,8 @@ func Cleanup() error {
 
 // Convert to jpeg with quality = 100
 // Should only be used when the PNG file size is too large for windows
-func ConvertToJPEG(inFile, outFile string) error {
+// TODO -- Cleanup
+/*func ConvertToJPEG(inFile, outFile string) error {
 	c, err := GetConfig()
 	if err != nil {
 		return err
@@ -262,4 +264,4 @@ func ConvertToJPEG(inFile, outFile string) error {
 	cmd := exec.Command(c.ImageMagick, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd.Run()
-}
+}*/

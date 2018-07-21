@@ -89,13 +89,16 @@ func main() {
 			err = lib.ProcessImage(inputAbsPath, scaledFiles[i], m.Width, m.Height, false, true)
 			checkErr(err)
 		}
+
+		err = lib.SetMonitorWallpaper(m, scaledFiles[i])
+		checkErr(err)
 	}
 
-	err = lib.CombineImages(scaledFiles, monitors, c.WallpaperFile)
-	checkErr(err)
+	//err = lib.CombineImages(scaledFiles, monitors, c.WallpaperFile)
+	//checkErr(err)
 
-	err = lib.ChangeBackground()
-	checkErr(err)
+	//err = lib.ChangeBackground()
+	//checkErr(err)
 }
 
 func checkErr(err error) {
