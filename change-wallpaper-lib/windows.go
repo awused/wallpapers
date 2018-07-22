@@ -26,7 +26,7 @@ type Monitor struct {
 	Width     int32
 	Height    int32
 	Path      string
-	Wallpaper string
+	Wallpaper AbsolutePath
 }
 
 // DesktopWallpaper does not extend IDispatch so this needs to be done manually

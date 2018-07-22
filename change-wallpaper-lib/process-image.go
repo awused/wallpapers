@@ -34,7 +34,12 @@ func ProcessImage(inFile, outFile string, width, height int32, touch, denoise, f
 		return err
 	}
 
-	validInFile, img, err := getImageConfig(inFile, c.TempDirectory)
+	validInFile, img, err := getImageConfig(inFile)
+	if err != nil {
+		return err
+	}
+
+	err = createMissingDirectories(outFile)
 	if err != nil {
 		return err
 	}
@@ -71,12 +76,7 @@ func ProcessImage(inFile, outFile string, width, height int32, touch, denoise, f
 }
 
 func GetScalingFactor(inFile string, width, height int32, touch bool) (int, error) {
-	c, err := GetConfig()
-	if err != nil {
-		return 0, err
-	}
-
-	_, img, err := getImageConfig(inFile, c.TempDirectory)
+	_, img, err := getImageConfig(inFile)
 	if err != nil {
 		return 0, err
 	}
@@ -85,12 +85,12 @@ func GetScalingFactor(inFile string, width, height int32, touch bool) (int, erro
 }
 
 func GetScaledIntermediateFile(outFile string, scale int) (string, error) {
-	c, err := GetConfig()
+	tdir, err := TempDir()
 	if err != nil {
 		return "", err
 	}
 
-	return filepath.Join(c.TempDirectory, fmt.Sprintf("%s-%d-intermediate.bmp", filepath.Base(outFile), scale)), nil
+	return filepath.Join(tdir, fmt.Sprintf("%s-%d-intermediate.bmp", filepath.Base(outFile), scale)), nil
 }
 
 func getScalingFactor(width, height int32, touch bool, img *image.Config) int {
@@ -108,7 +108,7 @@ func getScalingFactor(width, height int32, touch bool, img *image.Config) int {
 }
 
 // Gets the image.Config of the input image file, converting to bitmap if necessary
-func getImageConfig(inFile, tempDir string) (string, *image.Config, error) {
+func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 	c, err := GetConfig()
 	if err != nil {
 		return "", nil, err
@@ -143,11 +143,16 @@ func getImageConfig(inFile, tempDir string) (string, *image.Config, error) {
 		return "", nil, err
 	}
 	if err != nil || shouldRename {
+		tdir, err := TempDir()
+		if err != nil {
+			return "", nil, err
+		}
+
 		h := sha256.Sum256([]byte(inFile))
 
 		// Go has rather limited image format support, try to use imagemagick to convert to a known format
 		// Don't use BMP because the BMP library is very limited
-		convertedFile := filepath.Join(tempDir, hex.EncodeToString(h[:])+"-converted.png")
+		convertedFile := filepath.Join(tdir, hex.EncodeToString(h[:])+"-converted.png")
 		cmd := exec.Command(c.ImageMagick, "convert", inFile, convertedFile)
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		err = cmd.Run()
@@ -195,9 +200,10 @@ func imResize(inFile, outFile string, width, height int32, touch, flatten bool, 
 		"-crop", resStr + "+0+0"}
 
 	if flatten {
-		// Transparency appears to break when using waifu2x-caffe
+		// Transparency appears to break when using waifu2x-caffe, so flatten
 		// May be able to revisit in the future, but for now just flatten
-		args = append(args, "-flatten")
+		// This is very CPU intensive
+		args = append(args, "+repage", "-flatten")
 	}
 
 	args = append(args, outFile)
@@ -246,23 +252,8 @@ func w2xProcess(inFile, outFile string, scale int, denoise bool, w2x string, mod
 	return err
 }
 
-func Cleanup() error {
-	c, err := GetConfig()
-	if err != nil {
-		return err
-	}
-	args := []string{"/C", "del", "/Q", c.TempDirectory + "\\*.bmp", c.TempDirectory + "\\*.png"}
-	cmd := exec.Command("cmd", args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	/*err = cmd.Run()
-	  if err != nil { return err }
-
-	  args = []string{"/C", "del", "/Q", c.TempDirectory + "\\*.bmp"}
-	  cmd := exec.Command("cmd", args...)
-	  cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	  err = cmd.Run()
-	  if err != nil { return err }*/
-	return cmd.Run()
+func createMissingDirectories(outFilePath string) error {
+	return os.MkdirAll(filepath.Dir(outFilePath), 0)
 }
 
 // Convert to jpeg with quality = 100

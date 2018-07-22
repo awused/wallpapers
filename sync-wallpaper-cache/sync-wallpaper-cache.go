@@ -22,7 +22,7 @@ func main() {
 
 	log.SetOutput(f)
 
-	c, err := lib.ReadConfig()
+	c, err := lib.Init()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -33,12 +33,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = lib.SetupCacheDirectories(monitors)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	inputDirectories, err := lib.WalkAllInputDirectories()
+	originals, err := lib.GetAllOriginals()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -46,74 +41,72 @@ func main() {
 	count := 0
 	allValidFiles := make(map[string]bool)
 
-	for _, inp := range inputDirectories {
-		for _, relPath := range inp.Files {
-			scalingFactors := make([]int, len(monitors))
-			scaledFiles := make([]string, len(monitors))
-			absPath, err := lib.GetFullInputPath(inp, relPath)
+	for _, relPath := range originals {
+		scalingFactors := make([]int, len(monitors))
+		scaledFiles := make([]string, len(monitors))
+		absPath, err := lib.GetFullInputPath(relPath)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for i, m := range monitors {
+			outFile, err := lib.GetCacheImagePath(relPath, m)
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			for i, m := range monitors {
-				outFile, err := lib.GetCacheImagePath(inp, relPath, m)
-				if err != nil {
-					log.Fatal(err)
-				}
+			allValidFiles[filepath.Base(outFile)] = true
 
-				allValidFiles[filepath.Base(outFile)] = true
+			// Possible for an earlier monitor to have already created the right file
+			doScale, err := lib.ShouldProcessImage(absPath, outFile)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
 
-				// Possible for an earlier monitor to have already created the right file
-				doScale, err := lib.ShouldProcessImage(absPath, outFile)
+			if !doScale {
+				continue
+			}
+
+			count++
+			if count%500 == 0 {
+				err = lib.PartialCleanup()
 				if err != nil {
 					log.Fatal(err.Error())
 				}
+			}
 
-				if !doScale {
-					continue
-				}
+			scalingFactors[i], err = lib.GetScalingFactor(absPath, m.Width, m.Height, false)
+			if err != nil {
+				log.Fatal(err)
+			}
 
-				count++
-				if count%100 == 0 {
-					err = lib.Cleanup()
-					if err != nil {
-						log.Fatal(err.Error())
-					}
-				}
+			wipFile := outFile + "-wip.png"
 
-				scalingFactors[i], err = lib.GetScalingFactor(absPath, m.Width, m.Height, false)
-				if err != nil {
-					log.Fatal(err)
-				}
-
-				wipFile := outFile + "-wip.png"
-
-				match := false
-				for j, s := range scalingFactors[:i] {
-					if scalingFactors[i] == s {
-						match = true
-						err = lib.ProcessImage(scaledFiles[j], wipFile, m.Width, m.Height, false, false, true)
-						if err != nil {
-							log.Fatal(err)
-						}
-
-						break
-					}
-				}
-
-				if !match {
-					scaledFiles[i], err = lib.GetScaledIntermediateFile(wipFile, scalingFactors[i])
+			match := false
+			for j, s := range scalingFactors[:i] {
+				if scalingFactors[i] == s {
+					match = true
+					err = lib.ProcessImage(scaledFiles[j], wipFile, m.Width, m.Height, false, false, true)
 					if err != nil {
 						log.Fatal(err)
 					}
 
-					lib.ProcessImage(absPath, wipFile, m.Width, m.Height, false, true, true)
+					break
 				}
+			}
 
-				err = os.Rename(wipFile, outFile)
+			if !match {
+				scaledFiles[i], err = lib.GetScaledIntermediateFile(wipFile, scalingFactors[i])
 				if err != nil {
 					log.Fatal(err)
 				}
+
+				lib.ProcessImage(absPath, wipFile, m.Width, m.Height, false, true, true)
+			}
+
+			err = os.Rename(wipFile, outFile)
+			if err != nil {
+				log.Fatal(err)
 			}
 		}
 	}

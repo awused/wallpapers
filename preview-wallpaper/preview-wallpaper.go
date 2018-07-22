@@ -1,10 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	lib "github.com/awused/windows-wallpapers/change-wallpaper-lib"
@@ -27,7 +27,7 @@ func main() {
 
 	w := os.Args[1]
 
-	c, err := lib.ReadConfig()
+	_, err = lib.Init()
 	checkErr(err)
 	defer lib.Cleanup()
 
@@ -38,11 +38,13 @@ func main() {
 	scalingFactors := make([]int, len(monitors))
 	scaledFiles := make([]string, len(monitors))
 
+	tdir, err := lib.TempDir()
+	checkErr(err)
+
 MonitorLoop:
 	for i, m := range monitors {
 		outFiles[i] = filepath.Join(
-			c.TempDirectory,
-			strconv.Itoa(int(m.Width))+"x"+strconv.Itoa(int(m.Height))+"-prvw.png")
+			tdir, fmt.Sprintf("%dx%d", m.Width, m.Height)+"-preview.png")
 		m.Wallpaper = outFiles[i]
 
 		for _, s := range outFiles[:i] {

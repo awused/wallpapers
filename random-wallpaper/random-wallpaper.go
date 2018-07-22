@@ -19,74 +19,51 @@ func main() {
 
 	log.SetOutput(f)
 
-	c, err := lib.ReadConfig()
+	c, err := lib.Init()
 	checkErr(err)
 	defer lib.Cleanup()
 
 	monitors, err := lib.GetMonitors()
 	checkErr(err)
 
-	err = lib.SetupCacheDirectories(monitors)
-	checkErr(err)
-
-	inputDirectories, err := lib.WalkAllInputDirectories()
-	checkErr(err)
-
 	picker, err := persistent.NewPicker(c.UsedWallpapersDBDir)
 	checkErr(err)
 	defer picker.Close()
 
-	// Go from the unique ID (hash) back to the directory and file
-	fileLookups := make(map[string][]int)
+	originals, err := lib.GetAllOriginals()
+	checkErr(err)
 
-	for i, inp := range inputDirectories {
-		for j, relPath := range inp.Files {
-			uniqueId := lib.MakeUniqueIdForFile(inp, relPath)
-			err = picker.Add(uniqueId)
-			checkErr(err)
-
-			if lookup, ok := fileLookups[uniqueId]; ok {
-				// Hash collision, this is incredibly likely to be due to two input
-				// directories containing files with identical relative paths
-				s, _ := lib.GetFullInputPath(inp, relPath)
-				otherFile, _ := lib.GetFullInputPath(inputDirectories[lookup[0]], inputDirectories[lookup[0]].Files[lookup[1]])
-				log.Fatalf("Hash collision between [%s] and [%s], change your hash prefixes", s, otherFile)
-			}
-
-			fileLookups[uniqueId] = []int{i, j}
-		}
-	}
+	err = picker.AddAll(originals)
+	checkErr(err)
 
 	sz, err := picker.Size()
 	checkErr(err)
 	if sz == 0 {
-		log.Fatal("No wallpapers present in any OriginalsDirectory")
+		log.Fatal("No wallpapers present in OriginalDirectory")
 	}
 
-	var fileIDs []string
+	var inputRelPaths []string
 	if len(monitors) <= sz {
-		fileIDs, err = picker.UniqueN(len(monitors))
+		inputRelPaths, err = picker.UniqueN(len(monitors))
 	} else {
-		fileIDs, err = picker.NextN(len(monitors))
+		inputRelPaths, err = picker.NextN(len(monitors))
 	}
 	checkErr(err)
 
 	//scaledFiles := make([]string, len(monitors))
-	for i, inputId := range fileIDs {
+	for i, relPath := range inputRelPaths {
 		m := monitors[i]
-		inputDirectory := inputDirectories[fileLookups[inputId][0]]
-		inputRelPath := inputDirectory.Files[fileLookups[inputId][1]]
-		inputAbsPath, err := lib.GetFullInputPath(inputDirectory, inputRelPath)
+		absPath, err := lib.GetFullInputPath(relPath)
 		checkErr(err)
 
-		scaledFile, err := lib.GetCacheImagePath(inputDirectory, inputRelPath, m)
+		scaledFile, err := lib.GetCacheImagePath(relPath, m)
 		checkErr(err)
 
-		doScale, err := lib.ShouldProcessImage(inputAbsPath, scaledFile)
+		doScale, err := lib.ShouldProcessImage(absPath, scaledFile)
 		checkErr(err)
 
 		if doScale {
-			err = lib.ProcessImage(inputAbsPath, scaledFile, m.Width, m.Height, false, true, true)
+			err = lib.ProcessImage(absPath, scaledFile, m.Width, m.Height, false, true, true)
 			checkErr(err)
 		}
 

@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"log"
 	"os"
+	"path/filepath"
 
 	lib "github.com/awused/windows-wallpapers/change-wallpaper-lib"
 )
@@ -18,7 +21,7 @@ func main() {
 
 	//log.SetOutput(f)
 
-	_, err := lib.ReadConfig()
+	_, err := lib.Init()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -28,59 +31,67 @@ func main() {
 		log.Fatal(err)
 	}
 
-	err = lib.SetupCacheDirectories(monitors)
+	originals, err := lib.GetAllOriginals()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	inputDirectories, err := lib.WalkAllInputDirectories()
-	if err != nil {
-		log.Fatal(err)
-	}
+	for _, relPath := range originals {
+		for _, m := range monitors {
+			inputAbsPath, err := lib.GetFullInputPath(relPath)
+			if err != nil {
+				log.Fatal(err)
+			}
+			oldOutFile, err := lib.GetOldCacheImagePath(relPath, m)
+			if err != nil {
+				log.Fatal(err)
+			}
+			newOutFile, err := lib.GetCacheImagePath(relPath, m)
+			if err != nil {
+				log.Fatal(err)
+			}
 
-	for _, inp := range inputDirectories {
-		for _, relPath := range inp.Files {
-			for _, m := range monitors {
-				inputAbsPath, err := lib.GetFullInputPath(inp, relPath)
-				if err != nil {
-					log.Fatal(err)
-				}
-				oldOutFile, err := lib.GetOldCacheImagePath(inp, relPath, m)
-				if err != nil {
-					log.Fatal(err)
-				}
-				newOutFile, err := lib.GetCacheImagePath(inp, relPath, m)
-				if err != nil {
-					log.Fatal(err)
-				}
+			// If the old file is invalid, don't rename
+			doScale, err := lib.ShouldProcessImage(inputAbsPath, oldOutFile)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
 
-				// If the old file is invalid, don't rename
-				doScale, err := lib.ShouldProcessImage(inputAbsPath, oldOutFile)
-				if err != nil {
-					log.Fatal(err.Error())
-				}
+			if doScale {
+				continue
+			}
 
-				if doScale {
-					continue
-				}
+			// New file is already valid, don't overwrite
+			doScale, err = lib.ShouldProcessImage(inputAbsPath, newOutFile)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
 
-				// New file is already valid, don't overwrite
-				doScale, err = lib.ShouldProcessImage(inputAbsPath, newOutFile)
-				if err != nil {
-					log.Fatal(err.Error())
-				}
+			if !doScale {
+				continue
+			}
 
-				if !doScale {
-					continue
-				}
+			log.Printf("Renaming [%s] to [%s]", oldOutFile, newOutFile)
 
-				log.Printf("Renaming [%s] to [%s]", oldOutFile, newOutFile)
-
-				err = os.Rename(oldOutFile, newOutFile)
-				if err != nil {
-					log.Fatal(err)
-				}
+			err = os.Rename(oldOutFile, newOutFile)
+			if err != nil {
+				log.Fatal(err)
 			}
 		}
+
 	}
+}
+
+// TODO --Remove
+func GetOldCacheImagePath(relPath RelativePath, m *Monitor) (AbsolutePath, error) {
+	c, err := GetConfig()
+	if err != nil {
+		return "", err
+	}
+
+	h := sha256.Sum256([]byte(MakeOldUniqueIdForFile(relPath)))
+	return filepath.Join(getMonitorCacheDirectory(c.CacheDirectory, m), hex.EncodeToString(h[:])+".png"), nil
+}
+func MakeOldUniqueIdForFile(relPath RelativePath) string {
+	return "a/" + filepath.ToSlash(relPath)
 }
