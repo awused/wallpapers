@@ -44,7 +44,7 @@ func main() {
 MonitorLoop:
 	for i, m := range monitors {
 		outFiles[i] = filepath.Join(
-			tdir, fmt.Sprintf("%dx%d", m.Width, m.Height)+"-preview.png")
+			tdir, fmt.Sprintf("%dx%d", m.Width, m.Height)+"-preview.bmp")
 		m.Wallpaper = outFiles[i]
 
 		for _, s := range outFiles[:i] {

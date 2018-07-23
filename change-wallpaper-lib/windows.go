@@ -55,6 +55,7 @@ type IDesktopWallpaperVtbl struct {
 // Pulled from headers
 const CLSID = "{C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD}"
 const IID = "{B92B56A9-8B55-4E14-9A89-0199BBB6F93B}"
+const DWPOS_CENTER = uintptr(0)
 
 var modole32 = syscall.NewLazyDLL("ole32.dll")
 var coTaskMemFree = modole32.NewProc("CoTaskMemFree")
@@ -178,6 +179,11 @@ func GetMonitors() ([]*Monitor, error) {
 }
 
 func SetMonitorWallpapers(monitors []*Monitor) error {
+	err := SetRegistryKeys()
+	if err != nil {
+		return err
+	}
+
 	ole.CoInitialize(0)
 	defer ole.CoUninitialize()
 
@@ -191,8 +197,18 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 
 	vtable := (*IDesktopWallpaperVtbl)(unsafe.Pointer(desktop.RawVTable))
 
+	hr, _, _ := syscall.Syscall(
+		vtable.SetPosition,
+		2,
+		uintptr(unsafe.Pointer(desktop)),
+		DWPOS_CENTER,
+		0)
+	if hr != 0 {
+		return fmt.Errorf("Unexpected value from SetPosition %d", hr)
+	}
+
 	for _, m := range monitors {
-		hr, _, _ := syscall.Syscall(
+		hr, _, _ = syscall.Syscall(
 			vtable.SetWallpaper,
 			3,
 			uintptr(unsafe.Pointer(desktop)),
@@ -206,16 +222,16 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 	return nil
 }
 
-// TODO -- This is likely no longer necessary
+// TODO -- Uncertain whether this still has any meaning
 // Replace with calls to SetPosition
-func SetRegistryKeys(c *Config) error {
+func SetRegistryKeys() error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, `Control Panel\Desktop`, registry.SET_VALUE)
 	if err != nil {
 		return err
 	}
 	defer k.Close()
 
-	err = k.SetStringValue("WallpaperStyle", "0")
+	/*err = k.SetStringValue("WallpaperStyle", "0")
 	if err != nil {
 		return err
 	}
@@ -223,7 +239,7 @@ func SetRegistryKeys(c *Config) error {
 	err = k.SetStringValue("TileWallpaper", "1")
 	if err != nil {
 		return err
-	}
+	}*/
 
 	err = k.SetDWordValue("JPEGImportQuality", 100)
 	return err
