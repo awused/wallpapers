@@ -26,42 +26,75 @@ import (
 const model = `models\upconv_7_anime_style_art_rgb`
 const backupModel = `models\anime_style_art_rgb`
 
+// Offset arguments for cropping, expressed as positive or negative percentages
+// of the image. Setting both at once is a mistake, right now.
+// TODO -- support both at once
+type CropOffset struct {
+	Vertical   float64
+	Horizontal float64
+}
+
+type ProcessOptions struct {
+	Input  AbsolutePath
+	Output AbsolutePath
+	Width  int32
+	Height int32
+	// Default is "Fill", set touch to true to only touch the insides of the
+	// target rectangle
+	Touch bool
+	// Denoise the image. Recommended to always be true as many anime images,
+	// even pngs, contain undesired noise
+	Denoise bool
+	// Flatten transparency. Generally good to set this to tue for wallpapers
+	// TODO -- Add a configuration option for background colour
+	Flatten bool
+	Offset  CropOffset
+}
+
+func validateProcessOptions(po ProcessOptions) bool {
+	return !(po.Input == "" || po.Output == "" || po.Width == 0 || po.Height == 0)
+}
+
 // Default mode is to completely fill the target width and height and crop, touch=true only scales the image to touch the insides of the rectangle
 // Set denoise=false when the image has already been denoised. Don't double the same image multiple times, instead call this once for each necessary scaling factor
-func ProcessImage(inFile, outFile string, width, height int32, touch, denoise, flatten bool) error {
+func ProcessImage(po ProcessOptions) error {
+	if !validateProcessOptions(po) {
+		return fmt.Errorf("ProcessOptions missing required field")
+	}
+
 	c, err := GetConfig()
 	if err != nil {
 		return err
 	}
 
-	validInFile, img, err := getImageConfig(inFile)
+	validInFile, img, err := getImageConfig(po.Input)
 	if err != nil {
 		return err
 	}
 
-	err = createMissingDirectories(outFile)
+	err = createMissingDirectories(po.Output)
 	if err != nil {
 		return err
 	}
 
 	// Waifu2x only multiplies by powers of 2 and does not downscale so round up to the nearest non-negative power of 2
-	scale := getScalingFactor(width, height, touch, img)
+	scale := getScalingFactor(po.Width, po.Height, po.Touch, img)
 
 	// Assume unknown formats are noisy
 	//denoise := strings.HasSuffix(strings.ToLower(inFile), "jpg") || strings.HasSuffix(strings.ToLower(inFile), "jpeg") || inFile != validInFile
 
-	if scale > 1 || denoise {
-		var tempFile, err = GetScaledIntermediateFile(outFile, scale)
+	if scale > 1 || po.Denoise {
+		var tempFile, err = GetScaledIntermediateFile(po.Output, scale)
 		if err != nil {
 			return err
 		} // Should not be possible
 
-		err = w2xProcess(validInFile, tempFile, scale, denoise, c.Waifu2x, model)
+		err = w2xProcess(validInFile, tempFile, scale, po.Denoise, c.Waifu2x, model)
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
 				if status.ExitStatus() == 3221225477 {
 					log.Printf("Access violation when running waifu2x on file [%s], retrying with backup model\n", validInFile)
-					err = w2xProcess(validInFile, tempFile, scale, denoise, c.Waifu2x, backupModel)
+					err = w2xProcess(validInFile, tempFile, scale, po.Denoise, c.Waifu2x, backupModel)
 				}
 			}
 		}
@@ -69,13 +102,13 @@ func ProcessImage(inFile, outFile string, width, height int32, touch, denoise, f
 		if err != nil {
 			return err
 		}
-		return imResize(tempFile, outFile, width, height, touch, flatten, c.ImageMagick)
+		return imResize(tempFile, po.Output, po, img, c.ImageMagick)
 	} else {
-		return imResize(validInFile, outFile, width, height, touch, flatten, c.ImageMagick)
+		return imResize(validInFile, po.Output, po, img, c.ImageMagick)
 	}
 }
 
-func GetScalingFactor(inFile string, width, height int32, touch bool) (int, error) {
+func GetScalingFactor(inFile AbsolutePath, width, height int32, touch bool) (int, error) {
 	_, img, err := getImageConfig(inFile)
 	if err != nil {
 		return 0, err
@@ -84,7 +117,7 @@ func GetScalingFactor(inFile string, width, height int32, touch bool) (int, erro
 	return getScalingFactor(width, height, touch, img), nil
 }
 
-func GetScaledIntermediateFile(outFile string, scale int) (string, error) {
+func GetScaledIntermediateFile(outFile RelativePath, scale int) (string, error) {
 	tdir, err := TempDir()
 	if err != nil {
 		return "", err
@@ -185,25 +218,38 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 	return inFile, &img, nil
 }
 
-func imResize(inFile, outFile string, width, height int32, touch, flatten bool, imageMagick string) error {
-	resStr := fmt.Sprintf("%dx%d", width, height)
+func imResize(inFile, outFile AbsolutePath, po ProcessOptions, img *image.Config, imageMagick string) error {
+	resStr := fmt.Sprintf("%dx%d", po.Width, po.Height)
 	modeStr := "^"
-	if touch {
+	if po.Touch {
 		modeStr = ""
 	}
+
+	// Choose the right offset scaling factor regardless of whether the image
+	// is taller or wider than the monitor
+	offsetScale := math.Max(
+		float64(po.Width)/float64(img.Width),
+		float64(po.Height)/float64(img.Height))
+
+	voff := offsetScale * po.Offset.Vertical * float64(img.Height) / 100
+	hoff := offsetScale * po.Offset.Horizontal * float64(img.Width) / 100
+
+	offsetString := fmt.Sprintf("%+d%+d!",
+		int(hoff),
+		int(voff))
 
 	args := []string{
 		"convert", inFile,
 		"-filter", "Lanczos",
 		"-resize", resStr + modeStr,
 		"-gravity", "center",
-		"-crop", resStr + "+0+0"}
+		"-crop", resStr + offsetString}
 
-	if flatten {
+	if po.Flatten {
 		// Transparency appears to break when using waifu2x-caffe, so flatten
 		// May be able to revisit in the future, but for now just flatten
 		// This is very CPU intensive
-		args = append(args, "+repage", "-flatten")
+		args = append(args, "-flatten")
 	}
 
 	args = append(args, outFile)
@@ -213,7 +259,7 @@ func imResize(inFile, outFile string, width, height int32, touch, flatten bool, 
 	return cmd.Run()
 }
 
-func w2xProcess(inFile, outFile string, scale int, denoise bool, w2x string, modelPath string) error {
+func w2xProcess(inFile, outFile AbsolutePath, scale int, denoise bool, w2x string, modelPath string) error {
 	if scale < 1 {
 		return fmt.Errorf("Cannot use waifu2x with a scale less than 1")
 	}

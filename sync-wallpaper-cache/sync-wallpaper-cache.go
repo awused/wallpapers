@@ -82,14 +82,21 @@ func main() {
 
 			wipFile := outFile + "-wip.png"
 
+			po := lib.ProcessOptions{
+				Input:   absPath,
+				Output:  wipFile,
+				Width:   m.Width,
+				Height:  m.Height,
+				Denoise: true,
+				Flatten: true}
+
 			match := false
 			for j, s := range scalingFactors[:i] {
 				if scalingFactors[i] == s {
 					match = true
-					err = lib.ProcessImage(scaledFiles[j], wipFile, m.Width, m.Height, false, false, true)
-					if err != nil {
-						log.Fatal(err)
-					}
+					po.Input = scaledFiles[j]
+					// Scaled files have already been denoised
+					po.Denoise = false
 
 					break
 				}
@@ -100,8 +107,11 @@ func main() {
 				if err != nil {
 					log.Fatal(err)
 				}
+			}
 
-				lib.ProcessImage(absPath, wipFile, m.Width, m.Height, false, true, true)
+			err = lib.ProcessImage(po)
+			if err != nil {
+				log.Fatal(err)
 			}
 
 			err = os.Rename(wipFile, outFile)

@@ -11,7 +11,7 @@ import (
 )
 
 type Config struct {
-	WallpaperFile       string
+	// WallpaperFile       string
 	UsedWallpapersDBDir string
 	TempDirectory       string
 	Waifu2x             string
@@ -96,7 +96,7 @@ func PartialCleanup() error {
 }
 
 func (c *Config) validate() error {
-	if c.WallpaperFile == "" {
+	/*if c.WallpaperFile == "" {
 		return fmt.Errorf("Config missing WallpaperFile")
 	}
 
@@ -106,13 +106,13 @@ func (c *Config) validate() error {
 	}
 	if !os.IsNotExist(err) && !fi.Mode().IsRegular() {
 		return fmt.Errorf("WallpaperFile [%s] is not a regular file", c.WallpaperFile)
-	}
+	}*/
 
 	if c.UsedWallpapersDBDir == "" {
 		return fmt.Errorf("Config missing UsedWallpapersDBDir")
 	}
 
-	fi, err = os.Stat(c.UsedWallpapersDBDir)
+	fi, err := os.Stat(c.UsedWallpapersDBDir)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}

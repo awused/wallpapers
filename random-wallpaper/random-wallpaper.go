@@ -63,7 +63,14 @@ func main() {
 		checkErr(err)
 
 		if doScale {
-			err = lib.ProcessImage(absPath, scaledFile, m.Width, m.Height, false, true, true)
+			po := lib.ProcessOptions{
+				Input:   absPath,
+				Output:  scaledFile,
+				Width:   m.Width,
+				Height:  m.Height,
+				Denoise: true,
+				Flatten: true}
+			err = lib.ProcessImage(po)
 			checkErr(err)
 		}
 

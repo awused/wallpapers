@@ -8,11 +8,38 @@ import (
 	"time"
 
 	lib "github.com/awused/windows-wallpapers/change-wallpaper-lib"
+	"github.com/urfave/cli"
 )
 
 const errorLog = `C:\Logs\preview-wallpaper-error.log`
+const horizontal = "horizontal"
+const vertical = "vertical"
 
 func main() {
+	app := cli.NewApp()
+	app.Usage = "Preview wallpaper on all monitors"
+	app.Flags = []cli.Flag{
+		cli.Float64Flag{
+			Name:  vertical + ", y",
+			Value: 0,
+			Usage: "Vertical offset, as a percentage of the file's height." +
+				"Positive values move the viewport upwards",
+		},
+		cli.Float64Flag{
+			Name:  horizontal + ", x",
+			Value: 0,
+			Usage: "Horizontal offset, as a percentage of the file's width." +
+				"Positive values move the viewport right",
+		},
+	}
+
+	app.Action = preview
+
+	err := app.Run(os.Args)
+	checkErr(err)
+}
+
+func preview(c *cli.Context) error {
 	f, err := os.OpenFile(errorLog, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("Error opening log file: %v", err)
@@ -21,11 +48,11 @@ func main() {
 
 	log.SetOutput(f)
 
-	if len(os.Args) < 2 {
+	if c.NArg() == 0 {
 		log.Fatal("Missing input file")
 	}
 
-	w := os.Args[1]
+	w := c.Args().First()
 
 	_, err = lib.Init()
 	checkErr(err)
@@ -53,12 +80,26 @@ MonitorLoop:
 			}
 		}
 
+		po := lib.ProcessOptions{
+			Input:   w,
+			Output:  outFiles[i],
+			Width:   m.Width,
+			Height:  m.Height,
+			Denoise: true,
+			Flatten: true,
+			Offset: lib.CropOffset{
+				Vertical:   c.Float64(vertical) * -1,
+				Horizontal: c.Float64(horizontal)}}
+
 		scalingFactors[i], err = lib.GetScalingFactor(w, m.Width, m.Height, false)
 		checkErr(err)
 
 		for j, s := range scalingFactors[:i] {
 			if scalingFactors[i] == s {
-				err = lib.ProcessImage(scaledFiles[j], outFiles[i], m.Width, m.Height, false, false, true)
+				po.Input = scaledFiles[j]
+				// Scaled files have already been denoised
+				po.Denoise = false
+				err = lib.ProcessImage(po)
 				checkErr(err)
 
 				continue MonitorLoop
@@ -68,7 +109,7 @@ MonitorLoop:
 		scaledFiles[i], err = lib.GetScaledIntermediateFile(outFiles[i], scalingFactors[i])
 		checkErr(err)
 
-		err = lib.ProcessImage(w, outFiles[i], m.Width, m.Height, false, true, true)
+		err = lib.ProcessImage(po)
 		checkErr(err)
 	}
 
@@ -77,6 +118,7 @@ MonitorLoop:
 
 	// Windows will fail to read the wallpapers if we delete them too fast
 	<-time.After(5 * time.Second)
+	return nil
 }
 
 func checkErr(err error) {
