@@ -48,6 +48,17 @@ func main() {
 			log.Fatal(err)
 		}
 
+		// Intermediate files are stored as bitmaps, and can take a lot of space
+		// 100 4K bitmaps at 8bpc is over 2GB, and many intermediate files will
+		// exceed the resolution of the monitor
+		if count > 100 == 0 {
+			err = lib.PartialCleanup()
+			count = 0
+			if err != nil {
+				log.Fatal(err.Error())
+			}
+		}
+
 		for i, m := range monitors {
 			cropOffset := lib.GetConfigCropOffset(relPath, m)
 
@@ -69,12 +80,6 @@ func main() {
 			}
 
 			count++
-			if count%500 == 0 {
-				err = lib.PartialCleanup()
-				if err != nil {
-					log.Fatal(err.Error())
-				}
-			}
 
 			scalingFactors[i], err = lib.GetScalingFactor(absPath, m.Width, m.Height, false)
 			if err != nil {
