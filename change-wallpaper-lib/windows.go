@@ -23,8 +23,8 @@ type Monitor struct {
 	// Top       int32
 	// Right     int32
 	// Bottom    int32
-	Width     int32
-	Height    int32
+	Width     int
+	Height    int
 	Path      string
 	Wallpaper AbsolutePath
 }
@@ -96,7 +96,10 @@ func GetMonitors() ([]*Monitor, error) {
 
 	var monitors []*Monitor
 
-	ole.CoInitialize(0)
+	err := ole.CoInitialize(0)
+	if err != nil {
+		return nil, err
+	}
 	defer ole.CoUninitialize()
 
 	desktop, err := ole.CreateInstance(
@@ -169,8 +172,8 @@ func GetMonitors() ([]*Monitor, error) {
 			// Top:    m.top,
 			// Right:  m.right,
 			// Bottom: m.bottom,
-			Width:  m.right - m.left,
-			Height: m.bottom - m.top,
+			Width:  int(m.right - m.left),
+			Height: int(m.bottom - m.top),
 			Path:   path}
 		monitors = append(monitors, &mon)
 	}
@@ -184,7 +187,10 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 		return err
 	}
 
-	ole.CoInitialize(0)
+	err = ole.CoInitialize(0)
+	if err != nil {
+		return err
+	}
 	defer ole.CoUninitialize()
 
 	desktop, err := ole.CreateInstance(
@@ -223,7 +229,6 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 }
 
 // TODO -- Uncertain whether this still has any meaning
-// Replace with calls to SetPosition
 func SetRegistryKeys() error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, `Control Panel\Desktop`, registry.SET_VALUE)
 	if err != nil {

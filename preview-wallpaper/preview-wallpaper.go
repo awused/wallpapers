@@ -52,7 +52,8 @@ func preview(c *cli.Context) error {
 		log.Fatal("Missing input file")
 	}
 
-	w := c.Args().First()
+	w, err := filepath.Abs(c.Args().First())
+	checkErr(err)
 
 	_, err = lib.Init()
 	checkErr(err)
@@ -88,7 +89,7 @@ MonitorLoop:
 			Denoise: true,
 			Flatten: true,
 			Offset: lib.CropOffset{
-				Vertical:   c.Float64(vertical) * -1,
+				Vertical:   c.Float64(vertical),
 				Horizontal: c.Float64(horizontal)}}
 
 		scalingFactors[i], err = lib.GetScalingFactor(w, m.Width, m.Height, false)

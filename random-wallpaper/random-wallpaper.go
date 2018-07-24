@@ -53,10 +53,12 @@ func main() {
 	//scaledFiles := make([]string, len(monitors))
 	for i, relPath := range inputRelPaths {
 		m := monitors[i]
+		cropOffset := lib.GetConfigCropOffset(relPath, m)
+
 		absPath, err := lib.GetFullInputPath(relPath)
 		checkErr(err)
 
-		scaledFile, err := lib.GetCacheImagePath(relPath, m)
+		scaledFile, err := lib.GetCacheImagePath(relPath, m, cropOffset)
 		checkErr(err)
 
 		doScale, err := lib.ShouldProcessImage(absPath, scaledFile)
@@ -69,7 +71,8 @@ func main() {
 				Width:   m.Width,
 				Height:  m.Height,
 				Denoise: true,
-				Flatten: true}
+				Flatten: true,
+				Offset:  cropOffset}
 			err = lib.ProcessImage(po)
 			checkErr(err)
 		}

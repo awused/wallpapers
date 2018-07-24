@@ -5,13 +5,13 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 
 	"github.com/awused/awconf"
 )
 
 type Config struct {
-	// WallpaperFile       string
 	UsedWallpapersDBDir string
 	TempDirectory       string
 	Waifu2x             string
@@ -20,9 +20,10 @@ type Config struct {
 	CacheDirectory      string
 	ImageFileExtensions []string
 	MaxPNGWallpaperSize int64
+	Offset              map[string]map[string]map[string]CropOffset
 }
 
-var singleton *Config
+var conf *Config
 
 var tempDir string
 var tempErr error
@@ -42,11 +43,44 @@ func TempDir() (string, error) {
 }
 
 func GetConfig() (*Config, error) {
-	if singleton != nil {
-		return singleton, nil
+	if conf != nil {
+		return conf, nil
 	}
 
 	return nil, fmt.Errorf("Init never called")
+}
+
+func GetConfigCropOffset(path RelativePath, m *Monitor) CropOffset {
+	if conf == nil || m == nil {
+		return CropOffset{}
+	}
+
+	slashPath := filepath.ToSlash(path)
+	x, y := aspectRatio(m)
+
+	return conf.Offset[slashPath][x][y]
+}
+
+// Memoize normalized aspect ratio strings per monitor resolution
+var xMap = make(map[int]map[int]string)
+var yMap = make(map[int]map[int]string)
+
+func aspectRatio(m *Monitor) (string, string) {
+	if xMap[m.Width][m.Height] == "" {
+		a, b := m.Width, m.Height
+
+		for b != 0 {
+			a, b = b, a%b
+		}
+
+		if _, ok := xMap[m.Width]; !ok {
+			xMap[m.Width] = make(map[int]string)
+			yMap[m.Width] = make(map[int]string)
+		}
+		xMap[m.Width][m.Height] = strconv.Itoa(m.Width / a)
+		yMap[m.Width][m.Height] = strconv.Itoa(m.Height / a)
+	}
+	return xMap[m.Width][m.Height], yMap[m.Width][m.Height]
 }
 
 // Be sure to defer Cleanup() after calling this
@@ -57,7 +91,7 @@ func Init() (*Config, error) {
 		return nil, err
 	}
 
-	singleton = c
+	conf = c
 	err := c.validate()
 	if err != nil {
 		return nil, err

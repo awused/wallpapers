@@ -4,7 +4,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 
 	lib "github.com/awused/windows-wallpapers/change-wallpaper-lib"
 )
@@ -39,7 +38,7 @@ func main() {
 	}
 
 	count := 0
-	allValidFiles := make(map[string]bool)
+	allValidFiles := make(map[lib.AbsolutePath]bool)
 
 	for _, relPath := range originals {
 		scalingFactors := make([]int, len(monitors))
@@ -50,12 +49,14 @@ func main() {
 		}
 
 		for i, m := range monitors {
-			outFile, err := lib.GetCacheImagePath(relPath, m)
+			cropOffset := lib.GetConfigCropOffset(relPath, m)
+
+			outFile, err := lib.GetCacheImagePath(relPath, m, cropOffset)
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			allValidFiles[filepath.Base(outFile)] = true
+			allValidFiles[outFile] = true
 
 			// Possible for an earlier monitor to have already created the right file
 			doScale, err := lib.ShouldProcessImage(absPath, outFile)
@@ -88,7 +89,8 @@ func main() {
 				Width:   m.Width,
 				Height:  m.Height,
 				Denoise: true,
-				Flatten: true}
+				Flatten: true,
+				Offset:  cropOffset}
 
 			match := false
 			for j, s := range scalingFactors[:i] {
@@ -134,7 +136,8 @@ func pruneCache(c *lib.Config, valid map[string]bool) error {
 		}
 
 		if f.Mode().IsRegular() {
-			if strings.HasSuffix(path, "png") && !valid[filepath.Base(path)] {
+			absPath, err := filepath.Abs(path)
+			if err == nil && filepath.Ext(path) == ".png" && !valid[absPath] {
 				return os.Remove(path)
 			}
 		}

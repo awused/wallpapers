@@ -28,17 +28,17 @@ const backupModel = `models\anime_style_art_rgb`
 
 // Offset arguments for cropping, expressed as positive or negative percentages
 // of the image. Setting both at once is a mistake, right now.
-// TODO -- support both at once
+// TODO -- Support more flexible cropping
 type CropOffset struct {
-	Vertical   float64
+	Vertical   float64 // Note that +vertical is up, not down
 	Horizontal float64
 }
 
 type ProcessOptions struct {
 	Input  AbsolutePath
 	Output AbsolutePath
-	Width  int32
-	Height int32
+	Width  int
+	Height int
 	// Default is "Fill", set touch to true to only touch the insides of the
 	// target rectangle
 	Touch bool
@@ -108,7 +108,7 @@ func ProcessImage(po ProcessOptions) error {
 	}
 }
 
-func GetScalingFactor(inFile AbsolutePath, width, height int32, touch bool) (int, error) {
+func GetScalingFactor(inFile AbsolutePath, width, height int, touch bool) (int, error) {
 	_, img, err := getImageConfig(inFile)
 	if err != nil {
 		return 0, err
@@ -126,7 +126,7 @@ func GetScaledIntermediateFile(outFile RelativePath, scale int) (string, error) 
 	return filepath.Join(tdir, fmt.Sprintf("%s-%d-intermediate.bmp", filepath.Base(outFile), scale)), nil
 }
 
-func getScalingFactor(width, height int32, touch bool, img *image.Config) int {
+func getScalingFactor(width, height int, touch bool, img *image.Config) int {
 	if touch {
 		return int(math.Pow(2,
 			math.Max(
@@ -225,18 +225,22 @@ func imResize(inFile, outFile AbsolutePath, po ProcessOptions, img *image.Config
 		modeStr = ""
 	}
 
-	// Choose the right offset scaling factor regardless of whether the image
-	// is taller or wider than the monitor
-	offsetScale := math.Max(
-		float64(po.Width)/float64(img.Width),
-		float64(po.Height)/float64(img.Height))
+	offsetString := ""
 
-	voff := offsetScale * po.Offset.Vertical * float64(img.Height) / 100
-	hoff := offsetScale * po.Offset.Horizontal * float64(img.Width) / 100
+	if po.Offset.Horizontal != 0 || po.Offset.Vertical != 0 {
+		// Choose the right offset scaling factor regardless of whether the image
+		// is taller or wider than the monitor
+		offsetScale := math.Max(
+			float64(po.Width)/float64(img.Width),
+			float64(po.Height)/float64(img.Height))
 
-	offsetString := fmt.Sprintf("%+d%+d!",
-		int(hoff),
-		int(voff))
+		// Multiple voff by negative 1 so that it's more intuitive in configs
+		// Also Most of my offsets would be negative if I didn't
+		voff := -1 * offsetScale * po.Offset.Vertical * float64(img.Height) / 100
+		hoff := offsetScale * po.Offset.Horizontal * float64(img.Width) / 100
+
+		offsetString = fmt.Sprintf("%+d%+d!", int(hoff), int(voff))
+	}
 
 	args := []string{
 		"convert", inFile,
