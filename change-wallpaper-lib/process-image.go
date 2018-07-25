@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"sync"
 
 	_ "golang.org/x/image/bmp"
 	//"strings"
@@ -25,6 +26,8 @@ import (
 // The two models to try from waifu2x caffe, the first one is considered better but can easily run out of memory
 const model = `models\upconv_7_anime_style_art_rgb`
 const backupModel = `models\anime_style_art_rgb`
+
+var gpuLock sync.Mutex
 
 // Offset arguments for cropping, expressed as positive or negative percentages
 // of the image. Setting both at once is a mistake, right now.
@@ -89,6 +92,7 @@ func ProcessImage(po ProcessOptions) error {
 			return err
 		} // Should not be possible
 
+		gpuLock.Lock()
 		err = w2xProcess(validInFile, tempFile, scale, po.Denoise, c.Waifu2x, model)
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
@@ -98,6 +102,7 @@ func ProcessImage(po ProcessOptions) error {
 				}
 			}
 		}
+		gpuLock.Unlock()
 
 		if err != nil {
 			return err
@@ -117,13 +122,15 @@ func GetScalingFactor(inFile AbsolutePath, width, height int, touch bool) (int, 
 	return getScalingFactor(width, height, touch, img), nil
 }
 
-func GetScaledIntermediateFile(outFile RelativePath, scale int) (string, error) {
+func GetScaledIntermediateFile(outFile AbsolutePath, scale int) (string, error) {
 	tdir, err := TempDir()
 	if err != nil {
 		return "", err
 	}
 
-	return filepath.Join(tdir, fmt.Sprintf("%s-%d-intermediate.bmp", filepath.Base(outFile), scale)), nil
+	f := filepath.Join(tdir, hashPath(outFile)) + "-" + strconv.Itoa(scale) + "-intermediate.bmp"
+
+	return f, nil
 }
 
 func getScalingFactor(width, height int, touch bool, img *image.Config) int {
@@ -181,13 +188,11 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 			return "", nil, err
 		}
 
-		h := sha256.Sum256([]byte(inFile))
-
 		// Go has rather limited image format support, try to use imagemagick to convert to a known format
 		// Don't use BMP because the BMP library is very limited
-		convertedFile := filepath.Join(tdir, hex.EncodeToString(h[:])+"-converted.png")
+		convertedFile := filepath.Join(tdir, hashPath(inFile)+"-converted.png")
 		cmd := exec.Command(c.ImageMagick, "convert", inFile, convertedFile)
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		cmd.SysProcAttr = sysProcAttr
 		err = cmd.Run()
 		if err != nil {
 			return "", nil, err
@@ -259,7 +264,7 @@ func imResize(inFile, outFile AbsolutePath, po ProcessOptions, img *image.Config
 	args = append(args, outFile)
 
 	cmd := exec.Command(imageMagick, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.SysProcAttr = sysProcAttr
 	return cmd.Run()
 }
 
@@ -286,14 +291,14 @@ func w2xProcess(inFile, outFile AbsolutePath, scale int, denoise bool, w2x strin
 
 	cmd := exec.Command(w2x, args...)
 	cmd.Dir = wd
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	cmd.SysProcAttr = sysProcAttr
 	err := cmd.Run()
 	if err != nil {
 		// CUDA will occasionally fail to initialize if the GPU is still busy after the last call. Retry after a short delay.
 		time.Sleep(5 * time.Second)
 		cmd := exec.Command(w2x, args...)
 		cmd.Dir = wd
-		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		cmd.SysProcAttr = sysProcAttr
 		err = cmd.Run()
 		if err != nil {
 			log.Printf("Failed twice with settings: %v\n", args)
@@ -302,8 +307,16 @@ func w2xProcess(inFile, outFile AbsolutePath, scale int, denoise bool, w2x strin
 	return err
 }
 
-func createMissingDirectories(outFilePath string) error {
-	return os.MkdirAll(filepath.Dir(outFilePath), 0)
+// Used to avoid collisions when creating temporary files
+// It's either this or created deep nested directories inside TempDir
+// Which _might_ be a better option
+func hashPath(path AbsolutePath) string {
+	h := sha256.Sum256([]byte(path))
+	return hex.EncodeToString(h[:])
+}
+
+func createMissingDirectories(outFile AbsolutePath) error {
+	return os.MkdirAll(filepath.Dir(outFile), 0755)
 }
 
 // Convert to jpeg with quality = 100

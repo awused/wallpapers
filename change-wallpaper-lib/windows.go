@@ -19,10 +19,6 @@ type monitor struct {
 }
 
 type Monitor struct {
-	// Left      int32
-	// Top       int32
-	// Right     int32
-	// Bottom    int32
 	Width     int
 	Height    int
 	Path      string
@@ -56,6 +52,8 @@ type IDesktopWallpaperVtbl struct {
 const CLSID = "{C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD}"
 const IID = "{B92B56A9-8B55-4E14-9A89-0199BBB6F93B}"
 const DWPOS_CENTER = uintptr(0)
+
+var sysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
 var modole32 = syscall.NewLazyDLL("ole32.dll")
 var coTaskMemFree = modole32.NewProc("CoTaskMemFree")
@@ -176,6 +174,12 @@ func GetMonitors() ([]*Monitor, error) {
 			Height: int(m.bottom - m.top),
 			Path:   path}
 		monitors = append(monitors, &mon)
+	}
+
+	// Prime the aspect ratio caches, completely avoiding the need for locking
+	// when syncing the cache since they'll be effectively read only
+	for _, m := range monitors {
+		aspectRatio(m)
 	}
 
 	return monitors, nil

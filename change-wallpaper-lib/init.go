@@ -66,7 +66,9 @@ var xMap = make(map[int]map[int]string)
 var yMap = make(map[int]map[int]string)
 
 func aspectRatio(m *Monitor) (string, string) {
-	if xMap[m.Width][m.Height] == "" {
+	x, y := xMap[m.Width][m.Height], yMap[m.Width][m.Height]
+
+	if x == "" {
 		a, b := m.Width, m.Height
 
 		for b != 0 {
@@ -79,8 +81,10 @@ func aspectRatio(m *Monitor) (string, string) {
 		}
 		xMap[m.Width][m.Height] = strconv.Itoa(m.Width / a)
 		yMap[m.Width][m.Height] = strconv.Itoa(m.Height / a)
+
+		x, y = xMap[m.Width][m.Height], yMap[m.Width][m.Height]
 	}
-	return xMap[m.Width][m.Height], yMap[m.Width][m.Height]
+	return x, y
 }
 
 // Be sure to defer Cleanup() after calling this

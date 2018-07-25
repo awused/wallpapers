@@ -51,7 +51,7 @@ func main() {
 		// Intermediate files are stored as bitmaps, and can take a lot of space
 		// 100 4K bitmaps at 8bpc is over 2GB, and many intermediate files will
 		// exceed the resolution of the monitor
-		if count > 100 == 0 {
+		if count > 100 {
 			err = lib.PartialCleanup()
 			count = 0
 			if err != nil {

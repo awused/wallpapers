@@ -1,3 +1,6 @@
+// +build ignore
+// TODO -- remove, this is no longer necessary
+
 package main
 
 import (
