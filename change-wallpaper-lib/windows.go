@@ -3,6 +3,7 @@
 package changewallpaperlib
 
 import (
+	"errors"
 	"fmt"
 	"syscall"
 	"unsafe"
@@ -252,6 +253,45 @@ func SetRegistryKeys() error {
 
 	err = k.SetDWordValue("JPEGImportQuality", 100)
 	return err
+}
+
+func CheckIfLocked() (bool, error) {
+	userLib := syscall.NewLazyDLL("user32.dll")
+	openInputDesktop := userLib.NewProc("OpenInputDesktop")
+	closeDesktop := userLib.NewProc("CloseDesktop")
+
+	desktop, _, _ := openInputDesktop.Call(0,
+		0,
+		0)
+	if desktop == 0 {
+		// Failure here means that the user is on a desktop we cannot access
+		// That is overwhelmingly likely to be the lock screen
+		return true, nil
+	}
+	ret, _, _ := closeDesktop.Call(desktop)
+	if ret == 0 {
+		// If we can open the desktop, not being able to close it is a problem.
+		return true, errors.New("Failed to close desktop handle")
+	}
+
+	return false, nil
+	/*
+		Could use this to check the name of a desktop, likely useless
+
+		objectInformation := userLib.NewProc("GetUserObjectInformationW")
+
+		name := [128]uint16{}
+		ret, _, err := objectInformation.Call(
+			desktop,
+			2,
+			uintptr(unsafe.Pointer(&name)),
+			128)
+
+		log.Println(syscall.UTF16ToString(name[:]))
+		if ret == 0 {
+			return false, os.NewSyscallError("GetUserObjectInformation", err)
+		}*/
+
 }
 
 // Will convert the PNG wallpaper down to a JPEG if it is too large

@@ -23,6 +23,14 @@ func main() {
 	checkErr(err)
 	defer lib.Cleanup()
 
+	// TODO -- move this behaviour to a --cron or --unlocked flag
+	locked, err := lib.CheckIfLocked()
+	checkErr(err)
+	if locked {
+		// Silently exit, this isn't an error
+		return
+	}
+
 	monitors, err := lib.GetMonitors()
 	checkErr(err)
 
@@ -42,12 +50,7 @@ func main() {
 		log.Fatal("No wallpapers present in OriginalDirectory")
 	}
 
-	var inputRelPaths []string
-	if len(monitors) <= sz {
-		inputRelPaths, err = picker.UniqueN(len(monitors))
-	} else {
-		inputRelPaths, err = picker.NextN(len(monitors))
-	}
+	inputRelPaths, err := picker.TryUniqueN(len(monitors))
 	checkErr(err)
 
 	//scaledFiles := make([]string, len(monitors))
