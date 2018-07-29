@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/awused/go-strpick/persistent"
 	lib "github.com/awused/windows-wallpapers/change-wallpaper-lib"
 )
 
@@ -27,6 +28,12 @@ func main() {
 	}
 	defer lib.Cleanup()
 
+	picker, err := persistent.NewPicker(c.UsedWallpapersDBDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer picker.Close()
+
 	monitors, err := lib.GetMonitors()
 	if err != nil {
 		log.Fatal(err)
@@ -37,11 +44,15 @@ func main() {
 		log.Fatal(err)
 	}
 
+	err = picker.AddAll(originals)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	count := 0
 	allValidFiles := make(map[lib.AbsolutePath]bool)
 
 	for _, relPath := range originals {
-		scalingFactors := make([]int, len(monitors))
 		scaledFiles := make([]string, len(monitors))
 		absPath, err := lib.GetFullInputPath(relPath)
 		if err != nil {
@@ -81,38 +92,30 @@ func main() {
 
 			count++
 
-			scalingFactors[i], err = lib.GetScalingFactor(absPath, m.Width, m.Height, false)
+			wipFile := outFile + "-wip.png"
+
+			po := lib.ProcessOptions{
+				Input:      absPath,
+				Output:     wipFile,
+				Width:      m.Width,
+				Height:     m.Height,
+				Denoise:    true,
+				Flatten:    true,
+				CropOrPad:  true,
+				CropOffset: cropOffset}
+
+			scaledFiles[i], err = lib.GetScaledIntermediateFile(po)
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			wipFile := outFile + "-wip.png"
-
-			po := lib.ProcessOptions{
-				Input:   absPath,
-				Output:  wipFile,
-				Width:   m.Width,
-				Height:  m.Height,
-				Denoise: true,
-				Flatten: true,
-				Offset:  cropOffset}
-
-			match := false
-			for j, s := range scalingFactors[:i] {
-				if scalingFactors[i] == s {
-					match = true
-					po.Input = scaledFiles[j]
-					// Scaled files have already been denoised
+			for _, sf := range scaledFiles[:i] {
+				if scaledFiles[i] == sf {
+					po.Input = sf
+					// Scaled files have already been denoised and cropped/padded
 					po.Denoise = false
-
+					po.CropOrPad = false
 					break
-				}
-			}
-
-			if !match {
-				scaledFiles[i], err = lib.GetScaledIntermediateFile(wipFile, scalingFactors[i])
-				if err != nil {
-					log.Fatal(err)
 				}
 			}
 
@@ -121,6 +124,7 @@ func main() {
 				log.Fatal(err)
 			}
 
+			// Renaming should be atomic enough for our purposes
 			err = os.Rename(wipFile, outFile)
 			if err != nil {
 				log.Fatal(err)
@@ -129,6 +133,11 @@ func main() {
 	}
 
 	err = pruneCache(c, allValidFiles)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = picker.CleanDB()
 	if err != nil {
 		log.Fatal(err)
 	}

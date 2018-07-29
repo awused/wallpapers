@@ -14,6 +14,11 @@ import (
 const errorLog = `C:\Logs\preview-wallpaper-error.log`
 const horizontal = "horizontal"
 const vertical = "vertical"
+const top = "top"
+const bottom = "bottom"
+const left = "left"
+const right = "right"
+const background = "background"
 
 func main() {
 	app := cli.NewApp()
@@ -30,6 +35,31 @@ func main() {
 			Value: 0,
 			Usage: "Horizontal offset, as a percentage of the file's width." +
 				"Positive values move the viewport right",
+		},
+		cli.IntFlag{
+			Name:  top + ", t",
+			Value: 0,
+			Usage: "Pixels to crop off the top, negative values pad",
+		},
+		cli.IntFlag{
+			Name:  bottom + ", b",
+			Value: 0,
+			Usage: "Pixels to crop off the bottom, negative values pad",
+		},
+		cli.IntFlag{
+			Name:  left + ", l",
+			Value: 0,
+			Usage: "Pixels to crop off the left side, negative values pad",
+		},
+		cli.IntFlag{
+			Name:  right + ", r",
+			Value: 0,
+			Usage: "Pixels to crop off the right side, negative values pad",
+		},
+		cli.StringFlag{
+			Name:  background + ", bg",
+			Value: "black",
+			Usage: "Background colour to use when padding",
 		},
 	}
 
@@ -63,7 +93,6 @@ func preview(c *cli.Context) error {
 	checkErr(err)
 
 	outFiles := make([]string, len(monitors))
-	scalingFactors := make([]int, len(monitors))
 	scaledFiles := make([]string, len(monitors))
 
 	tdir, err := lib.TempDir()
@@ -82,33 +111,34 @@ MonitorLoop:
 		}
 
 		po := lib.ProcessOptions{
-			Input:   w,
-			Output:  outFiles[i],
-			Width:   m.Width,
-			Height:  m.Height,
-			Denoise: true,
-			Flatten: true,
-			Offset: lib.CropOffset{
+			Input:     w,
+			Output:    outFiles[i],
+			Width:     m.Width,
+			Height:    m.Height,
+			Denoise:   true,
+			Flatten:   true,
+			CropOrPad: true,
+			CropOffset: lib.CropOffset{
 				Vertical:   c.Float64(vertical),
-				Horizontal: c.Float64(horizontal)}}
+				Horizontal: c.Float64(horizontal),
+				Top:        c.Int(top),
+				Bottom:     c.Int(bottom),
+				Left:       c.Int(left),
+				Right:      c.Int(right),
+				Background: c.String(background)}}
 
-		scalingFactors[i], err = lib.GetScalingFactor(w, m.Width, m.Height, false)
+		scaledFiles[i], err = lib.GetScaledIntermediateFile(po)
 		checkErr(err)
 
-		for j, s := range scalingFactors[:i] {
-			if scalingFactors[i] == s {
-				po.Input = scaledFiles[j]
-				// Scaled files have already been denoised
+		for _, sf := range scaledFiles[:i] {
+			if scaledFiles[i] == sf {
+				po.Input = sf
+				// Scaled files have already been denoised and cropped/padded
 				po.Denoise = false
-				err = lib.ProcessImage(po)
-				checkErr(err)
-
-				continue MonitorLoop
+				po.CropOrPad = false
+				break
 			}
 		}
-
-		scaledFiles[i], err = lib.GetScaledIntermediateFile(outFiles[i], scalingFactors[i])
-		checkErr(err)
 
 		err = lib.ProcessImage(po)
 		checkErr(err)

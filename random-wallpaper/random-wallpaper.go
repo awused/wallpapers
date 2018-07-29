@@ -23,6 +23,10 @@ func main() {
 	checkErr(err)
 	defer lib.Cleanup()
 
+	picker, err := persistent.NewPicker(c.UsedWallpapersDBDir)
+	checkErr(err)
+	defer picker.Close()
+
 	// TODO -- move this behaviour to a --cron or --unlocked flag
 	locked, err := lib.CheckIfLocked()
 	checkErr(err)
@@ -33,10 +37,6 @@ func main() {
 
 	monitors, err := lib.GetMonitors()
 	checkErr(err)
-
-	picker, err := persistent.NewPicker(c.UsedWallpapersDBDir)
-	checkErr(err)
-	defer picker.Close()
 
 	originals, err := lib.GetAllOriginals()
 	checkErr(err)
@@ -61,26 +61,27 @@ func main() {
 		absPath, err := lib.GetFullInputPath(relPath)
 		checkErr(err)
 
-		scaledFile, err := lib.GetCacheImagePath(relPath, m, cropOffset)
+		cachedFile, err := lib.GetCacheImagePath(relPath, m, cropOffset)
 		checkErr(err)
 
-		doScale, err := lib.ShouldProcessImage(absPath, scaledFile)
+		doScale, err := lib.ShouldProcessImage(absPath, cachedFile)
 		checkErr(err)
 
 		if doScale {
 			po := lib.ProcessOptions{
-				Input:   absPath,
-				Output:  scaledFile,
-				Width:   m.Width,
-				Height:  m.Height,
-				Denoise: true,
-				Flatten: true,
-				Offset:  cropOffset}
+				Input:      absPath,
+				Output:     cachedFile,
+				Width:      m.Width,
+				Height:     m.Height,
+				Denoise:    true,
+				Flatten:    true,
+				CropOrPad:  true,
+				CropOffset: cropOffset}
 			err = lib.ProcessImage(po)
 			checkErr(err)
 		}
 
-		m.Wallpaper = scaledFile
+		m.Wallpaper = cachedFile
 	}
 
 	err = lib.SetMonitorWallpapers(monitors)

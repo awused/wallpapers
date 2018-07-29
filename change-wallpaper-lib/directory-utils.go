@@ -83,20 +83,16 @@ func GetFullInputPath(relPath RelativePath) (AbsolutePath, error) {
 	return filepath.Abs(filepath.Join(c.OriginalsDirectory, relPath))
 }
 
-func GetCacheImagePath(relPath RelativePath, m *Monitor, offset CropOffset) (AbsolutePath, error) {
+func GetCacheImagePath(relPath RelativePath, m *Monitor, co CropOffset) (
+	AbsolutePath, error) {
+
 	c, err := GetConfig()
 	if err != nil {
 		return "", err
 	}
 
-	off := ""
-	// Default floats are exactly equal to 0
-	if offset.Vertical != 0 || offset.Horizontal != 0 {
-		off = fmt.Sprintf("%.3f,%.3f", offset.Horizontal, offset.Vertical)
-	}
-
-	// This will result in double extensions (".png.png")
+	// This will result in double extensions (".png.png" or ".jpg.png")
 	// This is necessary to avoid name collisions since everything becomes png
 	return filepath.Abs(filepath.Join(
-		getMonitorCacheDirectory(c.CacheDirectory, m), relPath+off+".png"))
+		getMonitorCacheDirectory(c.CacheDirectory, m), relPath+co.String()+".png"))
 }
