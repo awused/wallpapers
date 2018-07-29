@@ -382,7 +382,7 @@ func imResize(inFile, outFile AbsolutePath, po ProcessOptions, img *image.Config
 		modeStr = ""
 	}
 
-	offsetString := ""
+	offsetString := "+0+0!"
 
 	co := po.CropOffset
 
