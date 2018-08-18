@@ -53,7 +53,7 @@ func main() {
 
 	var count int32
 	originalsProcessed := 0
-	var allValidFiles *sync.Map //make(map[lib.AbsolutePath]bool)
+	allValidFiles := &sync.Map{}
 	var wg sync.WaitGroup
 
 	for _, relPath := range originals {
