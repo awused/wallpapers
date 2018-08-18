@@ -4,6 +4,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 
 	"github.com/awused/go-strpick/persistent"
 	lib "github.com/awused/windows-wallpapers/change-wallpaper-lib"
@@ -49,88 +51,39 @@ func main() {
 		log.Fatal(err)
 	}
 
-	count := 0
-	allValidFiles := make(map[lib.AbsolutePath]bool)
+	var count int32
+	originalsProcessed := 0
+	var allValidFiles *sync.Map //make(map[lib.AbsolutePath]bool)
+	var wg sync.WaitGroup
 
 	for _, relPath := range originals {
-		scaledFiles := make([]string, len(monitors))
-		absPath, err := lib.GetFullInputPath(relPath)
-		if err != nil {
-			log.Fatal(err)
-		}
+		wg.Add(1)
+		originalsProcessed++
 
-		// Intermediate files are stored as bitmaps, and can take a lot of space
-		// 100 4K bitmaps at 8bpc is over 2GB, and many intermediate files will
-		// exceed the resolution of the monitor
-		if count > 100 {
-			err = lib.PartialCleanup()
-			count = 0
-			if err != nil {
-				log.Fatal(err.Error())
-			}
-		}
+		go func(relPath lib.RelativePath) {
+			processed := cacheImageForMonitors(relPath, monitors, allValidFiles)
+			atomic.AddInt32(&count, processed)
+			wg.Done()
+		}(relPath)
 
-		for i, m := range monitors {
-			cropOffset := lib.GetConfigCropOffset(relPath, m)
+		// Run in batches so that we can clean up if necessary
+		if originalsProcessed%200 == 0 {
+			wg.Wait()
 
-			outFile, err := lib.GetCacheImagePath(relPath, m, cropOffset)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			allValidFiles[outFile] = true
-
-			// Possible for an earlier monitor to have already created the right file
-			doScale, err := lib.ShouldProcessImage(absPath, outFile)
-			if err != nil {
-				log.Fatal(err.Error())
-			}
-
-			if !doScale {
-				continue
-			}
-
-			count++
-
-			wipFile := outFile + "-wip.png"
-
-			po := lib.ProcessOptions{
-				Input:      absPath,
-				Output:     wipFile,
-				Width:      m.Width,
-				Height:     m.Height,
-				Denoise:    true,
-				Flatten:    true,
-				CropOrPad:  true,
-				CropOffset: cropOffset}
-
-			scaledFiles[i], err = lib.GetScaledIntermediateFile(po)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			for _, sf := range scaledFiles[:i] {
-				if scaledFiles[i] == sf {
-					po.Input = sf
-					// Scaled files have already been denoised and cropped/padded
-					po.Denoise = false
-					po.CropOrPad = false
-					break
+			// Intermediate files are stored as bitmaps, and can take a lot of space
+			// 100 4K bitmaps at 8bpc is over 2GB, and many intermediate files will
+			// exceed the resolution of the monitor
+			if count > 100 {
+				err = lib.PartialCleanup()
+				count = 0
+				if err != nil {
+					log.Fatal(err.Error())
 				}
-			}
-
-			err = lib.ProcessImage(po)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-			// Renaming should be atomic enough for our purposes
-			err = os.Rename(wipFile, outFile)
-			if err != nil {
-				log.Fatal(err)
 			}
 		}
 	}
+
+	wg.Wait()
 
 	err = pruneCache(c, allValidFiles)
 	if err != nil {
@@ -143,7 +96,7 @@ func main() {
 	}
 }
 
-func pruneCache(c *lib.Config, valid map[string]bool) error {
+func pruneCache(c *lib.Config, allValidFiles *sync.Map) error {
 	return filepath.Walk(c.CacheDirectory, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -151,11 +104,88 @@ func pruneCache(c *lib.Config, valid map[string]bool) error {
 
 		if f.Mode().IsRegular() {
 			absPath, err := filepath.Abs(path)
-			if err == nil && filepath.Ext(path) == ".png" && !valid[absPath] {
+			_, valid := allValidFiles.Load(absPath)
+			if err == nil && filepath.Ext(path) == ".png" && !valid {
 				return os.Remove(path)
 			}
 		}
 
 		return nil
 	})
+}
+
+func cacheImageForMonitors(
+	relPath lib.RelativePath,
+	monitors []*lib.Monitor,
+	allValidFiles *sync.Map) int32 {
+
+	scaledFiles := make([]string, len(monitors))
+	absPath, err := lib.GetFullInputPath(relPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	var count int32
+
+	for i, m := range monitors {
+		cropOffset := lib.GetConfigCropOffset(relPath, m)
+
+		outFile, err := lib.GetCacheImagePath(relPath, m, cropOffset)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		allValidFiles.Store(outFile, true)
+
+		// Possible for an earlier monitor to have already created the right file
+		doScale, err := lib.ShouldProcessImage(absPath, outFile)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+
+		if !doScale {
+			continue
+		}
+
+		count++
+
+		wipFile := outFile + "-wip.png"
+
+		po := lib.ProcessOptions{
+			Input:      absPath,
+			Output:     wipFile,
+			Width:      m.Width,
+			Height:     m.Height,
+			Denoise:    true,
+			Flatten:    true,
+			CropOrPad:  true,
+			CropOffset: cropOffset}
+
+		scaledFiles[i], err = lib.GetScaledIntermediateFile(po)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		for _, sf := range scaledFiles[:i] {
+			if scaledFiles[i] == sf {
+				po.Input = sf
+				// Scaled files have already been denoised and cropped/padded
+				po.Denoise = false
+				po.CropOrPad = false
+				break
+			}
+		}
+
+		err = lib.ProcessImage(po)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		// Renaming should be atomic enough for our purposes
+		err = os.Rename(wipFile, outFile)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	return count
 }

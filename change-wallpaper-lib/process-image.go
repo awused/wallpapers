@@ -244,7 +244,7 @@ func getScaledIntermediateFile(
 		cropOrPadStr = po.CropOffset.cropOrPadString()
 	}
 
-	f := filepath.Join(tdir, hashPath(po.Output)) + "-" +
+	f := filepath.Join(tdir, hashPath(po.Input)) + "-" +
 		strconv.Itoa(scale) + "-" + cropOrPadStr +
 		"-intermediate.bmp"
 
