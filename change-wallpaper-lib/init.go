@@ -14,12 +14,15 @@ import (
 type Config struct {
 	UsedWallpapersDBDir string
 	TempDirectory       string
-	Waifu2x             string
+	Waifu2xCaffe        *string
+	Waifu2xCPP          string
 	ImageMagick         string
 	OriginalsDirectory  string
 	CacheDirectory      string
 	ImageFileExtensions []string
 	MaxPNGWallpaperSize int64
+	CPUScale            bool
+	CPUThreads          *int
 	Offset              map[string]map[string]map[string]CropOffset
 }
 
@@ -62,6 +65,7 @@ func GetConfigCropOffset(path RelativePath, m *Monitor) CropOffset {
 }
 
 // Memoize normalized aspect ratio strings per monitor resolution
+// Not even sure if this is worth doing, but the code has been written
 var xMap = make(map[int]map[int]string)
 var yMap = make(map[int]map[int]string)
 
@@ -169,16 +173,16 @@ func (c *Config) validate() error {
 		}
 	}
 
-	if c.Waifu2x == "" {
-		return fmt.Errorf("Config missing path to Waifu2x-caffe")
+	if c.Waifu2xCaffe == nil && c.Waifu2xCPP == "" {
+		return fmt.Errorf("Config missing Waifu2xCaffe and Waifu2xCPP")
 	}
 
-	fi, err = os.Stat(c.Waifu2x)
-	if err != nil {
-		return err
+	if c.Waifu2xCaffe != nil && *c.Waifu2xCaffe == "" {
+		return fmt.Errorf("Config contains empty Waifu2xCaffe")
 	}
-	if !fi.Mode().IsRegular() {
-		return fmt.Errorf("Waifu2x executable [%s] is not a regular file", c.Waifu2x)
+
+	if c.CPUThreads != nil && *c.CPUThreads <= 0 {
+		return fmt.Errorf("CPUThreads must be greater than 0")
 	}
 
 	if c.ImageMagick == "" {

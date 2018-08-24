@@ -33,9 +33,9 @@ func GetAllOriginals() (relPaths []RelativePath, err error) {
 		}
 
 		if f.Mode().IsRegular() {
-			pathLower := strings.ToLower(path)
+			ext := strings.ToLower(filepath.Ext(path))
 			for _, t := range c.ImageFileExtensions {
-				if strings.HasSuffix(pathLower, t) {
+				if t == ext {
 					path = strings.TrimPrefix(path, dir)
 					path = strings.TrimPrefix(path, string(filepath.Separator))
 					relPaths = append(relPaths, path)

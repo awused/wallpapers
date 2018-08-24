@@ -151,7 +151,7 @@ func GetMonitors() ([]*Monitor, error) {
 		}
 
 		// We don't really need to convert to and from []uint16 but this makes
-		// debugging easier, and allows us to immediately free memory allocated
+		// debugging easier and allows us to immediately free memory allocated
 		// outside of Go's control
 		path := syscall.UTF16ToString(pathOut[:])
 
@@ -233,7 +233,8 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 	return nil
 }
 
-// TODO -- Uncertain whether this still has any meaning
+// TODO -- Uncertain whether this still has any meaning with IDesktopWallpaper
+// interfaces
 func SetRegistryKeys() error {
 	k, err := registry.OpenKey(registry.CURRENT_USER, `Control Panel\Desktop`, registry.SET_VALUE)
 	if err != nil {
@@ -291,7 +292,6 @@ func CheckIfLocked() (bool, error) {
 		if ret == 0 {
 			return false, os.NewSyscallError("GetUserObjectInformation", err)
 		}*/
-
 }
 
 // Will convert the PNG wallpaper down to a JPEG if it is too large

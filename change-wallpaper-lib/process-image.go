@@ -16,18 +16,13 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync"
+	"time"
 
 	_ "golang.org/x/image/bmp"
 	//"strings"
 	"syscall"
-	"time"
 	"unicode"
 )
-
-// The two models to try from waifu2x caffe, the first one is considered better
-// but can easily run out of memory
-const model = `models\upconv_7_anime_style_art_rgb`
-const backupModel = `models\anime_style_art_rgb`
 
 var gpuLock sync.Mutex
 
@@ -71,7 +66,7 @@ func (co CropOffset) cropOrPadString() string {
 
 func (co CropOffset) offsetString() string {
 	if co.Vertical != 0 || co.Horizontal != 0 {
-		return fmt.Sprintf("%.3f,%.3f", co.Horizontal, co.Vertical)
+		return fmt.Sprintf("%.6f,%.6f", co.Horizontal, co.Vertical)
 	}
 	return ""
 }
@@ -154,16 +149,13 @@ func ProcessImage(po ProcessOptions) error {
 			return err
 		} // Should not be possible
 
+		// Lock the "GPU" even if we're CPU scaling.
+		// You're not going to do more than one model at a time on any CPU.
 		gpuLock.Lock()
-		err = w2xProcess(validInFile, tempFile, scale, po.Denoise, c.Waifu2x, model)
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-				// TODO -- This is probably specific to Windows, as is the waifu2x-caffe code in general
-				if status.ExitStatus() == 3221225477 {
-					log.Printf("Access violation when running waifu2x on file [%s], retrying with backup model\n", validInFile)
-					err = w2xProcess(validInFile, tempFile, scale, po.Denoise, c.Waifu2x, backupModel)
-				}
-			}
+		if c.Waifu2xCaffe != nil {
+			err = caffeProcess(validInFile, tempFile, scale, po.Denoise, c)
+		} else {
+			err = w2xcppProcess(validInFile, tempFile, scale, po.Denoise, c)
 		}
 		gpuLock.Unlock()
 
@@ -230,6 +222,82 @@ func doCropOrPad(
 	}
 
 	return croppedFile, &newimg, nil
+}
+
+// The two models to try from waifu2x caffe, the first one is much faster
+// but can easily run out of memory
+const model = `models/upconv_7_anime_style_art_rgb`
+const backupModel = `models/anime_style_art_rgb`
+
+func caffeProcess(
+	inFile, outFile AbsolutePath, scale int, denoise bool, c *Config) error {
+	err := caffeProcessModel(inFile, outFile, scale, denoise, c, model)
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
+
+			// Probably Windows specific, but anyone running waifu2x-caffe on Linux
+			// can figure this out themselves.
+			if status.ExitStatus() == 3221225477 {
+				log.Printf(
+					"Access violation when running waifu2x on file [%s], "+
+						"retrying with backup model\n", inFile)
+				err = caffeProcessModel(
+					inFile, outFile, scale, denoise, c, backupModel)
+			}
+		}
+	}
+
+	return err
+}
+
+func caffeProcessModel(inFile, outFile AbsolutePath, scale int, denoise bool, c *Config, modelPath string) error {
+	if scale < 1 {
+		return fmt.Errorf("Cannot use waifu2x with a scale less than 1")
+	}
+	// Not necessary anymore, keep commented to remind me if something breaks
+	//wd := filepath.Dir(w2x)
+	mode := "noise_scale"
+	if scale == 1 {
+		mode = "noise"
+	} else if !denoise {
+		mode = "scale"
+	}
+
+	args := []string{"-m", mode, "-i", inFile, "-o", outFile, "--model_dir", modelPath}
+	if scale != 1 {
+		args = append(args, "-s", strconv.Itoa(scale))
+	}
+
+	if denoise {
+		args = append(args, "-n", "1")
+	}
+
+	if c.CPUScale {
+		args = append(args, "-p", "cpu")
+	}
+
+	cmd := exec.Command(*c.Waifu2xCaffe, args...)
+	//cmd.Dir = wd
+	cmd.SysProcAttr = sysProcAttr
+	err := cmd.Run()
+	if err != nil {
+		// CUDA will occasionally fail to initialize if the GPU is still busy after
+		// the last call. Retry after a short delay.
+		time.Sleep(5 * time.Second)
+		cmd := exec.Command(*c.Waifu2xCaffe, args...)
+		//cmd.Dir = wd
+		cmd.SysProcAttr = sysProcAttr
+		err = cmd.Run()
+		if err != nil {
+			log.Printf("Failed twice with settings: %v\n", args)
+		}
+	}
+	return err
+}
+
+func w2xcppProcess(
+	inFile, outFile AbsolutePath, scale int, denoise bool, c *Config) error {
+	return nil
 }
 
 func getScaledIntermediateFile(
@@ -420,45 +488,6 @@ func imResize(inFile, outFile AbsolutePath, po ProcessOptions, img *image.Config
 	cmd := exec.Command(imageMagick, args...)
 	cmd.SysProcAttr = sysProcAttr
 	return cmd.Run()
-}
-
-func w2xProcess(inFile, outFile AbsolutePath, scale int, denoise bool, w2x string, modelPath string) error {
-	if scale < 1 {
-		return fmt.Errorf("Cannot use waifu2x with a scale less than 1")
-	}
-	wd := filepath.Dir(w2x)
-	mode := "noise_scale"
-	if scale == 1 {
-		mode = "noise"
-	} else if !denoise {
-		mode = "scale"
-	}
-
-	args := []string{"-m", mode, "-i", inFile, "-o", outFile, "--model_dir", modelPath}
-	if scale != 1 {
-		args = append(args, "-s", strconv.Itoa(scale))
-	}
-
-	if denoise {
-		args = append(args, "-n", "1")
-	}
-
-	cmd := exec.Command(w2x, args...)
-	cmd.Dir = wd
-	cmd.SysProcAttr = sysProcAttr
-	err := cmd.Run()
-	if err != nil {
-		// CUDA will occasionally fail to initialize if the GPU is still busy after the last call. Retry after a short delay.
-		time.Sleep(5 * time.Second)
-		cmd := exec.Command(w2x, args...)
-		cmd.Dir = wd
-		cmd.SysProcAttr = sysProcAttr
-		err = cmd.Run()
-		if err != nil {
-			log.Printf("Failed twice with settings: %v\n", args)
-		}
-	}
-	return err
 }
 
 // Used to avoid collisions when creating temporary files
