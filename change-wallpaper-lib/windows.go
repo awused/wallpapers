@@ -12,6 +12,8 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
+const WINDOWS = true
+
 type monitor struct {
 	left   int32
 	top    int32

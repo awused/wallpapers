@@ -250,7 +250,13 @@ func caffeProcess(
 	return err
 }
 
-func caffeProcessModel(inFile, outFile AbsolutePath, scale int, denoise bool, c *Config, modelPath string) error {
+func caffeProcessModel(
+	inFile, outFile AbsolutePath,
+	scale int,
+	denoise bool,
+	c *Config,
+	modelPath string) error {
+
 	if scale < 1 {
 		return fmt.Errorf("Cannot use waifu2x with a scale less than 1")
 	}
@@ -263,7 +269,8 @@ func caffeProcessModel(inFile, outFile AbsolutePath, scale int, denoise bool, c 
 		mode = "scale"
 	}
 
-	args := []string{"-m", mode, "-i", inFile, "-o", outFile, "--model_dir", modelPath}
+	args := []string{
+		"-m", mode, "-i", inFile, "-o", outFile, "--model_dir", modelPath}
 	if scale != 1 {
 		args = append(args, "-s", strconv.Itoa(scale))
 	}
@@ -297,7 +304,75 @@ func caffeProcessModel(inFile, outFile AbsolutePath, scale int, denoise bool, c 
 
 func w2xcppProcess(
 	inFile, outFile AbsolutePath, scale int, denoise bool, c *Config) error {
-	return nil
+	if scale < 1 {
+		return fmt.Errorf("Cannot use waifu2x with a scale less than 1")
+	}
+	mode := "noise_scale"
+	if scale == 1 {
+		mode = "noise"
+	} else if !denoise {
+		mode = "scale"
+	}
+
+	// Force OpenCL to avoid CUDA, which is currently (2018-08)
+	// broken in waifu2x-converter-cpp
+	args := []string{"-m", mode, "-i", inFile, "-o", outFile, "--force-OpenCL"}
+	if scale != 1 {
+		args = append(args, "--scale_ratio", strconv.Itoa(scale))
+	}
+
+	if denoise {
+		args = append(args, "--noise_level", "1")
+	}
+
+	if c.CPUScale {
+		args = append(args, "--disable-gpu")
+
+		if c.CPUThreads != nil {
+			args = append(args, "-j", strconv.Itoa(*c.CPUThreads))
+		}
+	}
+
+	cmd := exec.Command(c.Waifu2xCPP, args...)
+	if WINDOWS {
+		cmd.Dir = filepath.Dir(c.Waifu2xCPP)
+	}
+	cmd.SysProcAttr = sysProcAttr
+	err := cmd.Run()
+	if err != nil {
+		// Uncertain if CUDA and OpenCL run into the same problem, but try anyway
+		time.Sleep(5 * time.Second)
+		cmd := exec.Command(c.Waifu2xCPP, args...)
+		if WINDOWS {
+			cmd.Dir = filepath.Dir(c.Waifu2xCPP)
+		}
+		cmd.SysProcAttr = sysProcAttr
+		err = cmd.Run()
+		if err != nil {
+			log.Printf("Failed twice with settings: %v\n", args)
+		}
+	}
+
+	if err == nil {
+		// Workaround for https://github.com/DeadSix27/waifu2x-converter-cpp/issues/49 on Windows
+		// This is fixed by that PR, but no new release has been produced in ten
+		// months. I don't want to require users to build it themselves, so detect
+		// and work around the bug.
+
+		if _, err := os.Stat(outFile); err != nil {
+			if !os.IsNotExist(err) {
+				return err
+			}
+
+			if _, err := os.Stat(outFile + ".png"); err != nil {
+				return err
+			}
+
+			err = os.Rename(outFile+".png", outFile)
+		}
+	}
+
+	return err
 }
 
 func getScaledIntermediateFile(

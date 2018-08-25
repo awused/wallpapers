@@ -25,31 +25,21 @@ func main() {
 	log.SetOutput(f)
 
 	c, err := lib.Init()
-	if err != nil {
-		log.Fatal(err)
-	}
+	checkErr(err)
 	defer lib.Cleanup()
 
-	picker, err := persistent.NewPicker(c.UsedWallpapersDBDir)
-	if err != nil {
-		log.Fatal(err)
-	}
+	picker, err := persistent.NewPicker(c.DatabaseDir)
+	checkErr(err)
 	defer picker.Close()
 
 	monitors, err := lib.GetMonitors()
-	if err != nil {
-		log.Fatal(err)
-	}
+	checkErr(err)
 
 	originals, err := lib.GetAllOriginals()
-	if err != nil {
-		log.Fatal(err)
-	}
+	checkErr(err)
 
 	err = picker.AddAll(originals)
-	if err != nil {
-		log.Fatal(err)
-	}
+	checkErr(err)
 
 	var count int32
 	originalsProcessed := 0
@@ -76,9 +66,7 @@ func main() {
 			if count > 100 {
 				err = lib.PartialCleanup()
 				count = 0
-				if err != nil {
-					log.Fatal(err.Error())
-				}
+				checkErr(err)
 			}
 		}
 	}
@@ -86,14 +74,10 @@ func main() {
 	wg.Wait()
 
 	err = pruneCache(c, allValidFiles)
-	if err != nil {
-		log.Fatal(err)
-	}
+	checkErr(err)
 
 	err = picker.CleanDB()
-	if err != nil {
-		log.Fatal(err)
-	}
+	checkErr(err)
 }
 
 func pruneCache(c *lib.Config, allValidFiles *sync.Map) error {
@@ -121,9 +105,7 @@ func cacheImageForMonitors(
 
 	scaledFiles := make([]string, len(monitors))
 	absPath, err := lib.GetFullInputPath(relPath)
-	if err != nil {
-		log.Fatal(err)
-	}
+	checkErr(err)
 
 	var count int32
 
@@ -131,17 +113,13 @@ func cacheImageForMonitors(
 		cropOffset := lib.GetConfigCropOffset(relPath, m)
 
 		outFile, err := lib.GetCacheImagePath(relPath, m, cropOffset)
-		if err != nil {
-			log.Fatal(err)
-		}
+		checkErr(err)
 
 		allValidFiles.Store(outFile, true)
 
 		// Possible for an earlier monitor to have already created the right file
 		doScale, err := lib.ShouldProcessImage(absPath, outFile)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
+		checkErr(err)
 
 		if !doScale {
 			continue
@@ -162,9 +140,7 @@ func cacheImageForMonitors(
 			CropOffset: cropOffset}
 
 		scaledFiles[i], err = lib.GetScaledIntermediateFile(po)
-		if err != nil {
-			log.Fatal(err)
-		}
+		checkErr(err)
 
 		for _, sf := range scaledFiles[:i] {
 			if scaledFiles[i] == sf {
@@ -177,15 +153,18 @@ func cacheImageForMonitors(
 		}
 
 		err = lib.ProcessImage(po)
-		if err != nil {
-			log.Fatal(err)
-		}
+		checkErr(err)
 
 		// Renaming should be atomic enough for our purposes
 		err = os.Rename(wipFile, outFile)
-		if err != nil {
-			log.Fatal(err)
-		}
+		checkErr(err)
 	}
 	return count
+}
+
+func checkErr(err error) {
+	if err != nil {
+		log.Println(err)
+		panic(err)
+	}
 }

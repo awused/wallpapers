@@ -9,31 +9,33 @@ A tool for managing and shuffling a large number of wallpapers across multiple m
 
 * ImageMagick
 * Waifu2x
-    * [waifu2x-caffe](https://github.com/lltcggie/waifu2x-caffe) on Windows <!-- TODO - Maybe just w2x-conv-cpp on both -->
-    <!-- * [DeadSix27/waifu2x-converter-cpp](https://github.com/DeadSix27/waifu2x-converter-cpp) on Linux. Other forks of waifu2x-converter-cpp are not tested -->
+    * [waifu2x-caffe](https://github.com/lltcggie/waifu2x-caffe) is recommended on Windows with Nvidia GPUs. Untested on Linux.
+    * [DeadSix27/waifu2x-converter-cpp](https://github.com/DeadSix27/waifu2x-converter-cpp) otherwise.
 
 # Usage
 
 `go get -u github.com/awused/wallpapers`
 
-Install with `go install -ldflags -H=windowsgui github.com/awused/wallpapers` on Windows to avoid spawning a visible console Window. <!-- TODO - include windows registry hacks in this repo -->
+Install with `go install -ldflags -H=windowsgui github.com/awused/wallpapers` on Windows to avoid spawning a visible console Window. Note that this will also disable stdout. <!-- TODO - include windows registry hacks in this repo -->
 
 Fill in wallpapers.toml and copy it to your choice of /usr/local/etc/wallpapers.toml, /usr/etc/wallpapers.toml, $GOBIN/wallpapers.toml, or $HOME/.wallpapers.toml.
 
-Run `wallpapers sync` to prepopulate the cache for your current set of wallpapers. This can be a very time consuming operation and stresses both your CPU and GPU. It can take hours to run for hundreds or thousands of images. The cache can take considerably more space than your original wallpapers, especially with high resolution images, so make sure there is sufficient disk space.
+Run `wallpapers sync` to prepopulate the cache for your current set of wallpapers. This can be a very time consuming operation and stresses both your CPU and GPU. It can take hours to run for hundreds or thousands of images. The cache can take considerably more space than your original wallpapers, especially with high resolution monitors, so make sure there is sufficient disk space.
 
 `wallpapers -h` will display additional usage information.
+
+I've included some registry files for context menu entries that I find useful under [windows](windows). They must be edited before use.
 
 ## Commands
 ### Random
 
 `wallpapers random`
 
-The random command will set one random wallpaper randomly on each monitor. It favours less recently selected wallpapers (See [go-strpick](/awused/go-strpick)) and will not select the same wallpaper for multiple monitors at the same time when there are enough wallpapers to avoid it.
+The random command will set one random wallpaper randomly on each monitor. It favours less recently selected wallpapers (See [go-strpick](https://github.com/awused/go-strpick)) and will not select the same wallpaper for multiple monitors at the same time when there are enough wallpapers to avoid it.
 
 If one of the selected wallpapers hasn't been cached it will perform the same upscaling and caching as sync. If you're running this as part of a periodic task or cron job this can interrupt whatever you are doing by stressing your GPU, so it's recommended to run sync manually so you can control the timing.
 
-The --unlocked flag can be used to avoid changing wallpapers when the screen is locked.
+The --unlocked flag can be used to avoid changing wallpapers when the screen is locked, if you're running it using cron or a scheduled task.
 
 ### Preview
 

@@ -7,6 +7,8 @@ import (
 	"syscall"
 )
 
+const WINDOWS = false
+
 type Monitor struct {
 	Width     int
 	Height    int

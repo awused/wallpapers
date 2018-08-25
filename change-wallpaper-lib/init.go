@@ -12,8 +12,9 @@ import (
 )
 
 type Config struct {
-	UsedWallpapersDBDir string
+	DatabaseDir         string
 	TempDirectory       string
+	LogFile             string
 	Waifu2xCaffe        *string
 	Waifu2xCPP          string
 	ImageMagick         string
@@ -150,16 +151,17 @@ func (c *Config) validate() error {
 		return fmt.Errorf("WallpaperFile [%s] is not a regular file", c.WallpaperFile)
 	}*/
 
-	if c.UsedWallpapersDBDir == "" {
-		return fmt.Errorf("Config missing UsedWallpapersDBDir")
+	if c.DatabaseDir == "" {
+		return fmt.Errorf("Config missing DatabaseDir")
 	}
 
-	fi, err := os.Stat(c.UsedWallpapersDBDir)
-	if err != nil && !os.IsNotExist(err) {
-		return err
+	fi, err := os.Stat(c.DatabaseDir)
+	if err != nil {
+		return fmt.Errorf(
+			"Error calling os.Stat on DatabaseDir [%s]: %s", c.DatabaseDir, err)
 	}
-	if !os.IsNotExist(err) && fi.Mode().IsRegular() {
-		return fmt.Errorf("UsedWallpapersDBDir [%s] is not a directory", c.UsedWallpapersDBDir)
+	if !fi.IsDir() {
+		return fmt.Errorf("DatabaseDir [%s] is not a directory", c.DatabaseDir)
 	}
 
 	if c.TempDirectory != "" {
@@ -194,7 +196,8 @@ func (c *Config) validate() error {
 	}
 	fi, err = os.Stat(c.OriginalsDirectory)
 	if err != nil {
-		return err
+		return fmt.Errorf(
+			"Error calling os.Stat on OriginalsDirectory [%s]: %s", c.OriginalsDirectory, err)
 	}
 	if !fi.IsDir() {
 		return fmt.Errorf("OriginalsDirectory [%s] is not a directory", c.OriginalsDirectory)

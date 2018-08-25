@@ -1,0 +1,88 @@
+# Where original wallpapers are located
+OriginalsDirectory = 'C:\path\to\originals'
+
+# Directory to store the upscaled and cropped versions of each wallpaper for each monitor
+# This can get very large if you have high resolution monitors
+# This directory must be created manually.
+CacheDirectory = 'C:\path\to\wallpaper-cache'
+
+# Uncomment to log errors to a file instead of stdout.
+# LogFile = 'C:\Logs\wallpapers.log'
+
+# The directory used for the database of recently used wallpapers.
+# It's not safe to use this database from multiple processes at once.
+# It is safe for multiple processes or computers to use, with the same originals directory, it if they don't access it at the same time.
+# This directory must be created manually.
+DatabaseDir = 'C:\path\to\wallpaper-db'
+
+# Directory to store temporary files, leave blank for the system default temp directory
+TempDirectory = 'C:\temp'
+
+# Where to find waifu2x-caffe-cui.exe on Windows
+# If uncommented this takes precedence over waifu2x-converter-cpp
+# Only set this if you're using an nvidia GPU on Windows, otherwise leave it empty
+# Waifu2xCaffe = 'C:\path\to\waifu2x-caffe-cui.exe'
+
+# Where to find waifu2x-converter-cpp.
+# Does not need to be installed if waifu2x-caffe is used instead.
+# On Windows this must be a full, absolute path (C:\path\to\waifu2x-converter-cpp.exe).
+# Only tested with https://github.com/DeadSix27/waifu2x-converter-cpp, other forks may or may not work.
+# It's recommended to use waifu2x-caffe on Windows if you have an nvidia GPU for better performance, but this should work on any system.
+Waifu2xCPP = 'C:\path\to\waifu2x-converter-cpp.exe'
+
+# Uncomment to do waifu2x scaling on the CPU.
+# Not recommended, even for background processing, unless you're very patient.
+# CPUScale = true
+
+# Uncomment to limit the number of threads for CPU scaling when using waifu2x-converter-cpp.
+# Waifu2x-caffe doesn't have an argument to limit its threads but it avoids using 100% CPU.
+# CPUThreads = 4
+
+# Change this if ImageMagick isn't on your PATH
+ImageMagick = 'magick'
+
+# Supported file extensions. Unlikely to work if you change this
+ImageFileExtensions = ["bmp", "jpg", "jpeg", "png", "tif", "tiff"]
+
+# Offsets
+
+# Top, Bottom, Left, Right
+## How many pixels to cut from that side of the original image, negative values pad
+
+# Background
+## When padding, which colour to pad with (defaults to black), can be anything ImageMagick understands (https://www.imagemagick.org/script/color.php)
+
+# Horizontal, Vertical
+## How much to shift the image Up/Down or Left/Right, as a decimal percentage.
+## Use when you want to focus on something off center, commonly to prevent characters' heads from getting cut off.
+## Must contain a decimal, or config parsing will fail (thanks TOML)
+
+# The table format is [offsets.'path/to/wallpaper.png'.X.Y]
+# X and Y are the coprime components of the aspect ratio of your monitor. 16:10 is 8.5, 21:9 is 7:3
+# Use forward slashes in paths, even on Windows
+# You can experiment using the preview command, see wallpapers preview -h for more information
+
+# Examples:
+
+# A tall wallpaper with characters whose heads are cut off at 
+# "${OriginalsDirectory}\path\to\tall_wallpaper.jpg" and both 16:10 and 16:9 monitors:
+# [offset.'path/to/tall_wallpaper.jpg'.8.5]
+# Vertical = 5.0
+# [offset.'path/to/tall_wallpaper.jpg'.16.9]
+# Vertical = 6.5
+
+# For a wide wallpaper where the left side has something you want to see:
+# [offset.'path/to/wide_wallpaper.jpg'.8.5]
+# Horizontal = -10.0
+
+# Letterbox a tall wallpaper on ultrawide monitors with grey stripes
+# [offset.'tall_wallpaper'.7.3]
+# Left = -1000
+# Right = -1000
+# Background = "grey"
+
+# Cut off the bottom 300 pixels of a wide wallpaper on 4:3 monitors
+# [offset.'tall_wallpaper'.4.3]
+# Bottom = 300
+
+# TODO -- Find a better way. I can do slightly better with toml but yaml would be cleaner

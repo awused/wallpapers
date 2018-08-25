@@ -23,7 +23,7 @@ func main() {
 	checkErr(err)
 	defer lib.Cleanup()
 
-	picker, err := persistent.NewPicker(c.UsedWallpapersDBDir)
+	picker, err := persistent.NewPicker(c.DatabaseDir)
 	checkErr(err)
 	defer picker.Close()
 
@@ -96,6 +96,7 @@ func main() {
 
 func checkErr(err error) {
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
+		panic(err)
 	}
 }
