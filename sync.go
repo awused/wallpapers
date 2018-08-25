@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 
 	"github.com/awused/go-strpick/persistent"
-	lib "github.com/awused/windows-wallpapers/change-wallpaper-lib"
+	lib "github.com/awused/wallpapers/lib"
 	"github.com/urfave/cli"
 )
 
