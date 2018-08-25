@@ -44,7 +44,7 @@ ImageMagick = 'magick'
 # Supported file extensions. Unlikely to work if you change this
 ImageFileExtensions = ["bmp", "jpg", "jpeg", "png", "tif", "tiff"]
 
-# Offsets
+# Image Manipulation
 
 # Top, Bottom, Left, Right
 ## How many pixels to cut from that side of the original image, negative values pad

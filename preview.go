@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/urfave/cli"
 )
 
-const errorLog = `C:\Logs\preview-wallpaper-error.log`
 const horizontal = "horizontal"
 const vertical = "vertical"
 const top = "top"
@@ -20,10 +18,11 @@ const left = "left"
 const right = "right"
 const background = "background"
 
-func main() {
-	app := cli.NewApp()
-	app.Usage = "Preview wallpaper on all monitors"
-	app.Flags = []cli.Flag{
+func previewCommand() cli.Command {
+	cmd := cli.Command{}
+	cmd.Name = "preview"
+	cmd.Usage = "Preview a single wallpaper on every monitor"
+	cmd.Flags = []cli.Flag{
 		cli.Float64Flag{
 			Name:  vertical + ", y",
 			Value: 0,
@@ -63,31 +62,18 @@ func main() {
 		},
 	}
 
-	app.Action = preview
+	cmd.Action = previewAction
 
-	err := app.Run(os.Args)
-	checkErr(err)
+	return cmd
 }
 
-func preview(c *cli.Context) error {
-	f, err := os.OpenFile(errorLog, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("Error opening log file: %v", err)
-	}
-	defer f.Close()
-
-	log.SetOutput(f)
-
+func previewAction(c *cli.Context) error {
 	if c.NArg() == 0 {
 		log.Fatal("Missing input file")
 	}
 
 	w, err := filepath.Abs(c.Args().First())
 	checkErr(err)
-
-	_, err = lib.Init()
-	checkErr(err)
-	defer lib.Cleanup()
 
 	monitors, err := lib.GetMonitors()
 	checkErr(err)
@@ -150,11 +136,4 @@ MonitorLoop:
 	// Windows will fail to read the wallpapers if we delete them too fast
 	<-time.After(5 * time.Second)
 	return nil
-}
-
-func checkErr(err error) {
-	if err != nil {
-		log.Println(err)
-		panic(err)
-	}
 }

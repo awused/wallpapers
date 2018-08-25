@@ -2,37 +2,45 @@ package main
 
 import (
 	"log"
-	"os"
 
 	"github.com/awused/go-strpick/persistent"
 	lib "github.com/awused/windows-wallpapers/change-wallpaper-lib"
+	"github.com/urfave/cli"
 )
 
-const errorLog = `C:\Logs\random-wallpaper-error.log`
+const unlocked = "unlocked"
 
-func main() {
-	f, err := os.OpenFile(errorLog, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("Error opening file: %v", err)
+func randomCommand() cli.Command {
+	cmd := cli.Command{}
+	cmd.Name = "random"
+	cmd.Usage = "Randomly select a wallpaper for each monitor"
+	cmd.Flags = []cli.Flag{
+		cli.BoolTFlag{
+			Name:  unlocked + ", u",
+			Usage: "Checks to see if the screen is unlocked and aborts if it is",
+		},
 	}
-	defer f.Close()
 
-	log.SetOutput(f)
+	cmd.Action = randomAction
 
-	c, err := lib.Init()
+	return cmd
+}
+
+func randomAction(c *cli.Context) error {
+	conf, err := lib.GetConfig()
 	checkErr(err)
-	defer lib.Cleanup()
 
-	picker, err := persistent.NewPicker(c.DatabaseDir)
+	picker, err := persistent.NewPicker(conf.DatabaseDir)
 	checkErr(err)
 	defer picker.Close()
 
-	// TODO -- move this behaviour to a --cron or --unlocked flag
-	locked, err := lib.CheckIfLocked()
-	checkErr(err)
-	if locked {
-		// Silently exit, this isn't an error
-		return
+	if c.Bool(unlocked) {
+		locked, err := lib.CheckIfLocked()
+		checkErr(err)
+		if locked {
+			// Silently exit, this isn't an error
+			return nil
+		}
 	}
 
 	monitors, err := lib.GetMonitors()
@@ -53,7 +61,6 @@ func main() {
 	inputRelPaths, err := picker.TryUniqueN(len(monitors))
 	checkErr(err)
 
-	//scaledFiles := make([]string, len(monitors))
 	for i, relPath := range inputRelPaths {
 		m := monitors[i]
 		cropOffset := lib.GetConfigCropOffset(relPath, m)
@@ -86,17 +93,5 @@ func main() {
 
 	err = lib.SetMonitorWallpapers(monitors)
 	checkErr(err)
-
-	//err = lib.CombineImages(scaledFiles, monitors, c.WallpaperFile)
-	//checkErr(err)
-
-	//err = lib.ChangeBackground()
-	//checkErr(err)
-}
-
-func checkErr(err error) {
-	if err != nil {
-		log.Println(err)
-		panic(err)
-	}
+	return nil
 }

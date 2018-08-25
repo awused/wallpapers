@@ -18,7 +18,7 @@ A tool for managing and shuffling a large number of wallpapers across multiple m
 
 Install with `go install -ldflags -H=windowsgui github.com/awused/wallpapers` on Windows to avoid spawning a visible console Window. Note that this will also disable stdout. <!-- TODO - include windows registry hacks in this repo -->
 
-Fill in wallpapers.toml and copy it to your choice of /usr/local/etc/wallpapers.toml, /usr/etc/wallpapers.toml, $GOBIN/wallpapers.toml, or $HOME/.wallpapers.toml.
+Fill in wallpapers.toml and copy it to your choice of /usr/local/etc/wallpapers.toml, /usr/etc/wallpapers.toml, $GOBIN/wallpapers.toml, or $HOME/.wallpapers.toml. On Windows it's easiest to just drop it into your $GOPATH\bin directory.
 
 Run `wallpapers sync` to prepopulate the cache for your current set of wallpapers. This can be a very time consuming operation and stresses both your CPU and GPU. It can take hours to run for hundreds or thousands of images. The cache can take considerably more space than your original wallpapers, especially with high resolution monitors, so make sure there is sufficient disk space.
 
@@ -52,20 +52,23 @@ The sync will prepopulate the cache for the currently selected set of monitors a
 
 One thing sync does not do is remove cached images for monitors that are no longer attached. If you have a laptop that you connect periodically to a 4K monitor, those 4K images will be untouched. You'll need to manually delete them if you've permanently stopped using monitors of a specific resolution.
 
+Use the --limit parameter to limit the amount of wallpapers processed at once. The actual limit on processing will be limit times the number of unique resolutions you have between your monitors. The default limit is effectively unlimited.
+
 
 # Image Manipulation
 
 One of the biggest annoyances is dealing with different aspect ratios between your monitors, making some images look bad on some monitors, or images that just don't work well as wallpapers because they're too wide or too tall. Using different settings it's possible to crop, letterbox, or offset your wallpapers differently for all of your different aspect ratios.
 
-Settings are all set per aspect ratio. So all 16:9 monitors, regardless of their actual resolution, will use the same settings for the same wallpapers. The configuration format is also explained in wallpapers.toml.
+Settings are all set per aspect ratio. So all 16:9 monitors, regardless of their actual resolution, will use the same settings for the same wallpapers. The configuration format is also explained, with examples, in wallpapers.toml.
 
-# Cropping/Letterboxing
+
+## Cropping/Letterboxing
 The Top, Bottom, Left, and Right values are integers that control how many pixels are cropped from the original image. Negative integers result in padding.
 
 Background is the colour used when padding images. It defaults to black. It can be any string recognized by ImageMagick as a [valid colour](https://www.imagemagick.org/script/color.php).
 
 
-# Offsets
+## Offsets
 Using Vertical or Horizontal values, as decimal percentages (due to TOML limitations they must include a decimal component) can give you fine-grained control over exactly how much you translate an image up/down or right/left.
 
 You can only specify Horizontal or Vertical, not both at once, and any offset can instead be done using a crop. Offsets can be slightly more efficient than cropping, but not substantially. <!-- TODO - until I implement interactive previews, where they'll be massively more efficient than cropping -->

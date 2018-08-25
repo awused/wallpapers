@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -9,26 +9,39 @@ import (
 
 	"github.com/awused/go-strpick/persistent"
 	lib "github.com/awused/windows-wallpapers/change-wallpaper-lib"
+	"github.com/urfave/cli"
 )
 
-const errorLog = `C:\Logs\sync-wallpaper-cache-error.log`
+const limit = "limit"
+
+func syncCommand() cli.Command {
+	cmd := cli.Command{}
+	cmd.Name = "sync"
+	cmd.Usage = "Prepopulate the cache of scaled files and remove stale files"
+	cmd.Description = "Does not remove cached wallpapers for disconnected " +
+		"monitors, remove those manually"
+	cmd.Flags = []cli.Flag{
+		cli.Int64Flag{
+			Name:  limit + ", l",
+			Value: math.MaxInt64,
+			Usage: "The maximum number of original wallpapers to scale.",
+		},
+	}
+
+	cmd.Action = syncAction
+
+	return cmd
+}
 
 // Deletes all png files that don't correspond to an existing original wallpaper
 // Does not remove cached wallpapers for monitors that don't exist, users will have to remove those manually
-func main() {
-	f, err := os.OpenFile(errorLog, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
-	if err != nil {
-		log.Fatalf("Error opening file: %v", err)
-	}
-	defer f.Close()
+func syncAction(c *cli.Context) error {
+	var syncLimit int64 = c.Int64(limit)
 
-	log.SetOutput(f)
-
-	c, err := lib.Init()
+	conf, err := lib.GetConfig()
 	checkErr(err)
-	defer lib.Cleanup()
 
-	picker, err := persistent.NewPicker(c.DatabaseDir)
+	picker, err := persistent.NewPicker(conf.DatabaseDir)
 	checkErr(err)
 	defer picker.Close()
 
@@ -42,6 +55,7 @@ func main() {
 	checkErr(err)
 
 	var count int32
+
 	originalsProcessed := 0
 	allValidFiles := &sync.Map{}
 	var wg sync.WaitGroup
@@ -51,7 +65,8 @@ func main() {
 		originalsProcessed++
 
 		go func(relPath lib.RelativePath) {
-			processed := cacheImageForMonitors(relPath, monitors, allValidFiles)
+			processed := cacheImageForMonitors(
+				relPath, monitors, allValidFiles, &syncLimit)
 			atomic.AddInt32(&count, processed)
 			wg.Done()
 		}(relPath)
@@ -59,6 +74,11 @@ func main() {
 		// Run in batches so that we can clean up if necessary
 		if originalsProcessed%200 == 0 {
 			wg.Wait()
+
+			if syncLimit < 0 {
+				// Do not prune the cache, do not clean the DB
+				return nil
+			}
 
 			// Intermediate files are stored as bitmaps, and can take a lot of space
 			// 100 4K bitmaps at 8bpc is over 2GB, and many intermediate files will
@@ -73,15 +93,16 @@ func main() {
 
 	wg.Wait()
 
-	err = pruneCache(c, allValidFiles)
+	err = pruneCache(conf.CacheDirectory, allValidFiles)
 	checkErr(err)
 
 	err = picker.CleanDB()
 	checkErr(err)
+	return nil
 }
 
-func pruneCache(c *lib.Config, allValidFiles *sync.Map) error {
-	return filepath.Walk(c.CacheDirectory, func(path string, f os.FileInfo, err error) error {
+func pruneCache(cacheDir string, allValidFiles *sync.Map) error {
+	return filepath.Walk(cacheDir, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -101,7 +122,11 @@ func pruneCache(c *lib.Config, allValidFiles *sync.Map) error {
 func cacheImageForMonitors(
 	relPath lib.RelativePath,
 	monitors []*lib.Monitor,
-	allValidFiles *sync.Map) int32 {
+	allValidFiles *sync.Map,
+	syncLimit *int64) int32 {
+	if atomic.LoadInt64(syncLimit) < 0 {
+		return 0
+	}
 
 	scaledFiles := make([]string, len(monitors))
 	absPath, err := lib.GetFullInputPath(relPath)
@@ -125,8 +150,15 @@ func cacheImageForMonitors(
 			continue
 		}
 
+		if count == 0 {
+			if atomic.AddInt64(syncLimit, -1) < 0 {
+				break
+			}
+		}
+
 		count++
 
+		// TODO -- Remove the chance for filename collisions here
 		wipFile := outFile + "-wip.png"
 
 		po := lib.ProcessOptions{
@@ -160,11 +192,4 @@ func cacheImageForMonitors(
 		checkErr(err)
 	}
 	return count
-}
-
-func checkErr(err error) {
-	if err != nil {
-		log.Println(err)
-		panic(err)
-	}
 }
