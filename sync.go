@@ -135,9 +135,9 @@ func cacheImageForMonitors(
 	var count int32
 
 	for i, m := range monitors {
-		cropOffset := lib.GetConfigCropOffset(relPath, m)
+		imageProps := lib.GetConfigImageProps(relPath, m)
 
-		outFile, err := lib.GetCacheImagePath(relPath, m, cropOffset)
+		outFile, err := lib.GetCacheImagePath(relPath, m, imageProps)
 		checkErr(err)
 
 		allValidFiles.Store(outFile, true)
@@ -169,7 +169,7 @@ func cacheImageForMonitors(
 			Denoise:    true,
 			Flatten:    true,
 			CropOrPad:  true,
-			CropOffset: cropOffset}
+			ImageProps: imageProps}
 
 		scaledFiles[i], err = lib.GetScaledIntermediateFile(po)
 		checkErr(err)

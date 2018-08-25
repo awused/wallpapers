@@ -28,7 +28,7 @@ var gpuLock sync.Mutex
 
 // Offset arguments for cropping, expressed as positive or negative percentages
 // of the image. Setting both at once is a mistake, right now.
-type CropOffset struct {
+type ImageProps struct {
 	Vertical   float64 // Note that +vertical is up, not down
 	Horizontal float64
 	// Cropping/padding the original image
@@ -44,7 +44,7 @@ type CropOffset struct {
 	Background string
 }
 
-func (co CropOffset) cropOrPadString() string {
+func (co ImageProps) cropOrPadString() string {
 	if co.Top == 0 && co.Bottom == 0 && co.Left == 0 && co.Right == 0 {
 		return ""
 	}
@@ -64,14 +64,14 @@ func (co CropOffset) cropOrPadString() string {
 		"%d,%d,%d,%d,%s", co.Top, co.Bottom, co.Left, co.Right, colour)
 }
 
-func (co CropOffset) offsetString() string {
+func (co ImageProps) offsetString() string {
 	if co.Vertical != 0 || co.Horizontal != 0 {
 		return fmt.Sprintf("%.6f,%.6f", co.Horizontal, co.Vertical)
 	}
 	return ""
 }
 
-func (co CropOffset) String() string {
+func (co ImageProps) String() string {
 	cropOrPadStr := co.cropOrPadString()
 	offsetStr := co.offsetString()
 
@@ -97,12 +97,12 @@ type ProcessOptions struct {
 	// Should be true unless Input is a partially processed intermediate file
 	Denoise bool
 	// Flatten transparency. Generally good to set this to tue for wallpapers
-	// TODO -- Use the CropOffset background colour, but default to white instead
+	// TODO -- Use the ImageProps background colour, but default to white instead
 	Flatten bool
-	// Whether to apply the Cropping/Padding settings in CropOffset
+	// Whether to apply the Cropping/Padding settings in ImageProps
 	// Should be true unless Input is a partially processed intermediate file
 	CropOrPad  bool
-	CropOffset CropOffset
+	ImageProps ImageProps
 }
 
 func validateProcessOptions(po ProcessOptions) bool {
@@ -172,7 +172,7 @@ func doCropOrPad(
 	inFile AbsolutePath, po ProcessOptions, img *image.Config, magick string) (
 	AbsolutePath, *image.Config, error) {
 
-	co := po.CropOffset
+	co := po.ImageProps
 	cropOrPadStr := co.cropOrPadString()
 	if cropOrPadStr == "" {
 		return inFile, img, nil
@@ -384,7 +384,7 @@ func getScaledIntermediateFile(
 
 	cropOrPadStr := ""
 	if po.CropOrPad {
-		cropOrPadStr = po.CropOffset.cropOrPadString()
+		cropOrPadStr = po.ImageProps.cropOrPadString()
 	}
 
 	f := filepath.Join(tdir, hashPath(po.Input)) + "-" +
@@ -430,8 +430,8 @@ func getScalingFactorApplyCrop(po ProcessOptions) (int, error) {
 	}
 
 	if po.CropOrPad {
-		img.Width -= po.CropOffset.Left + po.CropOffset.Right
-		img.Height -= po.CropOffset.Top + po.CropOffset.Bottom
+		img.Width -= po.ImageProps.Left + po.ImageProps.Right
+		img.Height -= po.ImageProps.Top + po.ImageProps.Bottom
 	}
 
 	return getScalingFactorIgnoreCrop(po, img), nil
@@ -527,7 +527,7 @@ func imResize(inFile, outFile AbsolutePath, po ProcessOptions, img *image.Config
 
 	offsetString := "+0+0!"
 
-	co := po.CropOffset
+	co := po.ImageProps
 
 	if co.Horizontal != 0 || co.Vertical != 0 {
 		// Choose the right offset scaling factor regardless of whether the image

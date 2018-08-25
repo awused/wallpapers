@@ -83,7 +83,7 @@ func GetFullInputPath(relPath RelativePath) (AbsolutePath, error) {
 	return filepath.Abs(filepath.Join(c.OriginalsDirectory, relPath))
 }
 
-func GetCacheImagePath(relPath RelativePath, m *Monitor, co CropOffset) (
+func GetCacheImagePath(relPath RelativePath, m *Monitor, co ImageProps) (
 	AbsolutePath, error) {
 
 	c, err := GetConfig()

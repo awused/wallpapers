@@ -63,12 +63,12 @@ func randomAction(c *cli.Context) error {
 
 	for i, relPath := range inputRelPaths {
 		m := monitors[i]
-		cropOffset := lib.GetConfigCropOffset(relPath, m)
+		imageProps := lib.GetConfigImageProps(relPath, m)
 
 		absPath, err := lib.GetFullInputPath(relPath)
 		checkErr(err)
 
-		cachedFile, err := lib.GetCacheImagePath(relPath, m, cropOffset)
+		cachedFile, err := lib.GetCacheImagePath(relPath, m, imageProps)
 		checkErr(err)
 
 		doScale, err := lib.ShouldProcessImage(absPath, cachedFile)
@@ -83,7 +83,7 @@ func randomAction(c *cli.Context) error {
 				Denoise:    true,
 				Flatten:    true,
 				CropOrPad:  true,
-				CropOffset: cropOffset}
+				ImageProps: imageProps}
 			err = lib.ProcessImage(po)
 			checkErr(err)
 		}

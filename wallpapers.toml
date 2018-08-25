@@ -44,7 +44,9 @@ ImageMagick = 'magick'
 # Supported file extensions. Unlikely to work if you change this
 ImageFileExtensions = ["bmp", "jpg", "jpeg", "png", "tif", "tiff"]
 
-# Image Manipulation
+# Image Manipulation Properties
+# Control how individual images are manipulated before and after scaling on
+# your monitors
 
 # Top, Bottom, Left, Right
 ## How many pixels to cut from that side of the original image, negative values pad
@@ -57,7 +59,7 @@ ImageFileExtensions = ["bmp", "jpg", "jpeg", "png", "tif", "tiff"]
 ## Use when you want to focus on something off center, commonly to prevent characters' heads from getting cut off.
 ## Must contain a decimal, or config parsing will fail (thanks TOML)
 
-# The table format is [offsets.'path/to/wallpaper.png'.X.Y]
+# The table format is [props.'path/to/wallpaper.png'.X.Y]
 # X and Y are the coprime components of the aspect ratio of your monitor. 16:10 is 8.5, 21:9 is 7:3
 # Use forward slashes in paths, even on Windows
 # You can experiment using the preview command, see wallpapers preview -h for more information
@@ -66,23 +68,23 @@ ImageFileExtensions = ["bmp", "jpg", "jpeg", "png", "tif", "tiff"]
 
 # A tall wallpaper with characters whose heads are cut off at 
 # "${OriginalsDirectory}\path\to\tall_wallpaper.jpg" and both 16:10 and 16:9 monitors:
-# [offset.'path/to/tall_wallpaper.jpg'.8.5]
+# [props.'path/to/tall_wallpaper.jpg'.8.5]
 # Vertical = 5.0
-# [offset.'path/to/tall_wallpaper.jpg'.16.9]
+# [props.'path/to/tall_wallpaper.jpg'.16.9]
 # Vertical = 6.5
 
 # For a wide wallpaper where the left side has something you want to see:
-# [offset.'path/to/wide_wallpaper.jpg'.8.5]
+# [props.'path/to/wide_wallpaper.jpg'.8.5]
 # Horizontal = -10.0
 
 # Letterbox a tall wallpaper on ultrawide monitors with grey stripes
-# [offset.'tall_wallpaper'.7.3]
+# [props.'tall_wallpaper'.7.3]
 # Left = -1000
 # Right = -1000
 # Background = "grey"
 
 # Cut off the bottom 300 pixels of a wide wallpaper on 4:3 monitors
-# [offset.'tall_wallpaper'.4.3]
+# [props.'tall_wallpaper'.4.3]
 # Bottom = 300
 
 # TODO -- Find a better way. I can do slightly better with toml but yaml would be cleaner

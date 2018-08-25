@@ -104,7 +104,7 @@ MonitorLoop:
 			Denoise:   true,
 			Flatten:   true,
 			CropOrPad: true,
-			CropOffset: lib.CropOffset{
+			ImageProps: lib.ImageProps{
 				Vertical:   c.Float64(vertical),
 				Horizontal: c.Float64(horizontal),
 				Top:        c.Int(top),

@@ -24,7 +24,7 @@ type Config struct {
 	MaxPNGWallpaperSize int64
 	CPUScale            bool
 	CPUThreads          *int
-	Offset              map[string]map[string]map[string]CropOffset
+	Props               map[string]map[string]map[string]ImageProps
 }
 
 var conf *Config
@@ -54,15 +54,15 @@ func GetConfig() (*Config, error) {
 	return nil, fmt.Errorf("Init never called")
 }
 
-func GetConfigCropOffset(path RelativePath, m *Monitor) CropOffset {
+func GetConfigImageProps(path RelativePath, m *Monitor) ImageProps {
 	if conf == nil || m == nil {
-		return CropOffset{}
+		return ImageProps{}
 	}
 
 	slashPath := filepath.ToSlash(path)
 	x, y := aspectRatio(m)
 
-	return conf.Offset[slashPath][x][y]
+	return conf.Props[slashPath][x][y]
 }
 
 // Memoize normalized aspect ratio strings per monitor resolution
