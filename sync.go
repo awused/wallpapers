@@ -20,6 +20,7 @@ func syncCommand() cli.Command {
 	cmd.Usage = "Prepopulate the cache of scaled files and remove stale files"
 	cmd.Description = "Does not remove cached wallpapers for disconnected " +
 		"monitors, remove those manually"
+	cmd.Before = beforeFunc
 	cmd.Flags = []cli.Flag{
 		cli.Int64Flag{
 			Name:  limit + ", l",

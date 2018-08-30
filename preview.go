@@ -22,6 +22,8 @@ func previewCommand() cli.Command {
 	cmd := cli.Command{}
 	cmd.Name = "preview"
 	cmd.Usage = "Preview a single wallpaper on every monitor"
+	cmd.ArgsUsage = "FILE"
+	cmd.Before = beforeFunc
 	cmd.Flags = []cli.Flag{
 		cli.Float64Flag{
 			Name:  vertical + ", y",

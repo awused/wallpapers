@@ -14,6 +14,7 @@ func randomCommand() cli.Command {
 	cmd := cli.Command{}
 	cmd.Name = "random"
 	cmd.Usage = "Randomly select a wallpaper for each monitor"
+	cmd.Before = beforeFunc
 	cmd.Flags = []cli.Flag{
 		cli.BoolTFlag{
 			Name:  unlocked + ", u",

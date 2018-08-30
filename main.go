@@ -9,9 +9,26 @@ import (
 )
 
 func main() {
+	defer lib.Cleanup()
+
+	app := cli.NewApp()
+	app.Usage = "Program for managing wallpapers for multiple monitors"
+	app.Commands = []cli.Command{
+		previewCommand(),
+		syncCommand(),
+		randomCommand(),
+		interactiveCommand(),
+	}
+
+	err := app.Run(os.Args)
+	checkErr(err)
+}
+
+// Only init when necessary
+// Can't do conditionally in app.Before because app.Before is useless for any purpose
+func beforeFunc(ctxt *cli.Context) error {
 	c, err := lib.Init()
 	checkErr(err)
-	defer lib.Cleanup()
 
 	if c.LogFile != "" {
 		f, err := os.OpenFile(c.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
@@ -22,18 +39,7 @@ func main() {
 
 		log.SetOutput(f)
 	}
-
-	app := cli.NewApp()
-	app.Usage = "Program for managing wallpapers for multiple monitors"
-
-	app.Commands = []cli.Command{
-		previewCommand(),
-		syncCommand(),
-		randomCommand(),
-	}
-
-	err = app.Run(os.Args)
-	checkErr(err)
+	return nil
 }
 
 func checkErr(err error) {

@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	_ "golang.org/x/image/bmp"
+	"golang.org/x/image/bmp"
 	//"strings"
 	"syscall"
 	"unicode"
@@ -144,20 +144,22 @@ func ProcessImage(po ProcessOptions) error {
 	scale := getScalingFactorIgnoreCrop(po, img)
 
 	if scale > 1 || po.Denoise {
-		var tempFile, err = getScaledIntermediateFile(po, scale)
+		tempFile, err := getScaledIntermediateFile(po, scale)
 		if err != nil {
 			return err
 		} // Should not be possible
 
-		// Lock the "GPU" even if we're CPU scaling.
-		// You're not going to do more than one model at a time on any CPU.
-		gpuLock.Lock()
-		if c.Waifu2xCaffe != nil {
-			err = caffeProcess(validInFile, tempFile, scale, po.Denoise, c)
-		} else {
-			err = w2xcppProcess(validInFile, tempFile, scale, po.Denoise, c)
+		if !fileExists(tempFile) {
+			// Lock the "GPU" even if we're CPU scaling.
+			// You're not going to do more than one model at a time on any CPU.
+			gpuLock.Lock()
+			if c.Waifu2xCaffe != nil {
+				err = caffeProcess(validInFile, tempFile, scale, po.Denoise, c)
+			} else {
+				err = w2xcppProcess(validInFile, tempFile, scale, po.Denoise, c)
+			}
+			gpuLock.Unlock()
 		}
-		gpuLock.Unlock()
 
 		if err != nil {
 			return err
@@ -191,6 +193,10 @@ func doCropOrPad(
 	newimg.Height -= co.Top + co.Bottom
 
 	croppedFile := filepath.Join(tdir, hashPath(inFile)+cropOrPadStr+"-cropped.png")
+
+	if fileExists(croppedFile) {
+		return croppedFile, &newimg, nil
+	}
 
 	bg := co.Background
 	if bg == "" {
@@ -437,7 +443,7 @@ func getScalingFactorApplyCrop(po ProcessOptions) (int, error) {
 	return getScalingFactorIgnoreCrop(po, img), nil
 }
 
-// Gets the image.Config of the input image file, converting to bitmap if necessary
+// Gets the image.Config of the input file, converting to png if necessary
 func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 	c, err := GetConfig()
 	if err != nil {
@@ -456,10 +462,13 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 	}
 
 	if !fi.Mode().IsRegular() {
-		return "", nil, fmt.Errorf("Input image [%s] is not a regular file", inFile)
+		return "", nil,
+			fmt.Errorf("Input image [%s] is not a regular file", inFile)
 	}
 
-	// Waifu2x CLI interface doesn't accept unicode from Go, treat unicode input as if it needs to be converted
+	// TODO -- Confirm if this is still true
+	// Waifu2x CLI interface doesn't accept unicode from Go
+	// treat unicode input as if it needs to be converted
 	shouldRename := false
 	for _, chr := range inFile {
 		if chr > unicode.MaxASCII {
@@ -469,7 +478,7 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 	}
 
 	img, _, err := image.DecodeConfig(in)
-	if err != nil && err.Error() != "image: unknown format" && err.Error() != "bmp: unsupported BMP image" {
+	if err != nil && err != image.ErrFormat && err != bmp.ErrUnsupported {
 		return "", nil, err
 	}
 	if err != nil || shouldRename {
@@ -478,7 +487,8 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 			return "", nil, err
 		}
 
-		// Go has rather limited image format support, try to use imagemagick to convert to a known format
+		// Go has rather limited image format support
+		// try to use imagemagick to convert to a supported format
 		// Don't use BMP because the BMP library is very limited
 		convertedFile := filepath.Join(tdir, hashPath(inFile)+"-converted.png")
 		// File might already exist from an earlier call
@@ -499,13 +509,14 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 		}
 		defer inc.Close()
 
-		fi, err = in.Stat()
+		fi, err = inc.Stat()
 		if err != nil {
 			return "", nil, err
 		}
 
 		if !fi.Mode().IsRegular() {
-			return "", nil, fmt.Errorf("Input image [%s] is not a regular file", inFile)
+			return "", nil,
+				fmt.Errorf("Input image [%s] is not a regular file", inFile)
 		}
 
 		img, _, err = image.DecodeConfig(inc)
@@ -575,6 +586,11 @@ func hashPath(path AbsolutePath) string {
 
 func createMissingDirectories(outFile AbsolutePath) error {
 	return os.MkdirAll(filepath.Dir(outFile), 0755)
+}
+
+func fileExists(file AbsolutePath) bool {
+	_, err := os.Stat(file)
+	return err == nil
 }
 
 // Convert to jpeg with quality = 100
