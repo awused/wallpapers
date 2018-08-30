@@ -5,6 +5,7 @@ package changewallpaperlib
 import (
 	"errors"
 	"fmt"
+	"os"
 	"syscall"
 	"unsafe"
 
@@ -335,3 +336,32 @@ func CheckIfLocked() (bool, error) {
 
 	return nil
 }*/
+
+const ATTACH_PARENT_PROCESS = uintptr(^uint32(0)) // (DWORD)-1
+
+var modkernel32 = syscall.NewLazyDLL("kernel32.dll")
+var procAttachConsole = modkernel32.NewProc("AttachConsole")
+
+// Attempts to attach to the parent console if one exists so we can get stdout
+// Note that it's impossible to properly redirect stdin
+// See https://stackoverflow.com/questions/23743217/
+func AttachParentConsole() {
+	r, _, _ :=
+		syscall.Syscall(procAttachConsole.Addr(), 1, ATTACH_PARENT_PROCESS, 0, 0)
+
+	if r == 0 {
+		return
+	}
+
+	hout, err := syscall.GetStdHandle(syscall.STD_OUTPUT_HANDLE)
+	if err != nil {
+		return
+	}
+	herr, err := syscall.GetStdHandle(syscall.STD_ERROR_HANDLE)
+	if err != nil {
+		return
+	}
+
+	os.Stdout = os.NewFile(uintptr(hout), "/dev/stdout")
+	os.Stderr = os.NewFile(uintptr(herr), "/dev/stderr")
+}

@@ -9,6 +9,7 @@ import (
 )
 
 func main() {
+	lib.AttachParentConsole()
 	defer lib.Cleanup()
 
 	app := cli.NewApp()

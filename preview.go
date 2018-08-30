@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"path/filepath"
 	"time"
@@ -77,19 +76,52 @@ func previewAction(c *cli.Context) error {
 	w, err := filepath.Abs(c.Args().First())
 	checkErr(err)
 
+	imageProps := lib.ImageProps{
+		Vertical:   c.Float64(vertical),
+		Horizontal: c.Float64(horizontal),
+		Top:        c.Int(top),
+		Bottom:     c.Int(bottom),
+		Left:       c.Int(left),
+		Right:      c.Int(right),
+		Background: c.String(background)}
+
+	previewWallpaperUsingFakeCache(w, imageProps)
+
+	// Windows will fail to read the wallpapers if we delete them too fast
+	<-time.After(5 * time.Second)
+	return nil
+}
+
+// Redirects the cache to a temporary folder or panics
+func redirectCache() {
+	conf, err := lib.GetConfig()
+	checkErr(err)
+
+	tdir, err := lib.TempDir()
+	checkErr(err)
+
+	// lie about where the cache is
+	conf.CacheDirectory = filepath.Join(tdir, "cache")
+}
+
+func previewWallpaperUsingFakeCache(
+	wallpaper string, imageProps lib.ImageProps) {
+
+	redirectCache()
+
 	monitors, err := lib.GetMonitors()
 	checkErr(err)
 
 	outFiles := make([]string, len(monitors))
 	scaledFiles := make([]string, len(monitors))
 
-	tdir, err := lib.TempDir()
-	checkErr(err)
-
 MonitorLoop:
 	for i, m := range monitors {
-		outFiles[i] = filepath.Join(
-			tdir, fmt.Sprintf("%dx%d", m.Width, m.Height)+"-preview.bmp")
+		cachePng, err := lib.GetCacheImagePath("preview", m, imageProps)
+		checkErr(err)
+
+		outFiles[i] = cachePng + ".bmp"
+
 		m.Wallpaper = outFiles[i]
 
 		for _, s := range outFiles[:i] {
@@ -98,22 +130,21 @@ MonitorLoop:
 			}
 		}
 
+		should, err := lib.ShouldProcessImage(wallpaper, outFiles[i])
+		checkErr(err)
+		if !should {
+			continue MonitorLoop
+		}
+
 		po := lib.ProcessOptions{
-			Input:     w,
-			Output:    outFiles[i],
-			Width:     m.Width,
-			Height:    m.Height,
-			Denoise:   true,
-			Flatten:   true,
-			CropOrPad: true,
-			ImageProps: lib.ImageProps{
-				Vertical:   c.Float64(vertical),
-				Horizontal: c.Float64(horizontal),
-				Top:        c.Int(top),
-				Bottom:     c.Int(bottom),
-				Left:       c.Int(left),
-				Right:      c.Int(right),
-				Background: c.String(background)}}
+			Input:      wallpaper,
+			Output:     outFiles[i],
+			Width:      m.Width,
+			Height:     m.Height,
+			Denoise:    true,
+			Flatten:    true,
+			CropOrPad:  true,
+			ImageProps: imageProps}
 
 		scaledFiles[i], err = lib.GetScaledIntermediateFile(po)
 		checkErr(err)
@@ -134,8 +165,4 @@ MonitorLoop:
 
 	err = lib.SetMonitorWallpapers(monitors)
 	checkErr(err)
-
-	// Windows will fail to read the wallpapers if we delete them too fast
-	<-time.After(5 * time.Second)
-	return nil
 }

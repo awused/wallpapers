@@ -195,7 +195,7 @@ func doCropOrPad(
 	croppedFile := filepath.Join(tdir, hashPath(inFile)+cropOrPadStr+"-cropped.png")
 
 	if fileExists(croppedFile) {
-		return croppedFile, &newimg, nil
+		return croppedFile, img, nil
 	}
 
 	bg := co.Background

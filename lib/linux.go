@@ -29,3 +29,5 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 func CheckIfLocked() (bool, error) {
 	return false, errors.New("Not yet implemented")
 }
+
+func AttachParentConsole() {}

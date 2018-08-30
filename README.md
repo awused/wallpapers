@@ -55,6 +55,15 @@ One thing sync does not do is remove cached images for monitors that are no long
 Use the --limit parameter to limit the amount of wallpapers processed at once. The actual limit on processing will be limit times the number of unique resolutions you have between your monitors. The default limit is effectively unlimited.
 
 
+## Interactive
+
+`wallpapers interactive wallpaper.jpg`
+
+Interactively preview a wallpaper on all your monitors, reusing processed files so you can quickly dial in your settings. Using vertical and horizontal offsets are more efficient than cropping for this as changes will not need to be run through waifu2x. Use the print command to print out a snippet of TOML that can be copied into the configuration file.
+
+On windows you'll want probably want to build a separate executable without hiding the console. In powershell this could be done with `go build -o $Env:GOPATH\bin\wallcon.exe github.com/awused/wallpapers`. Then you can run it with `wallcon interactive wallpaper.jpg`.
+
+
 # Image Manipulation
 
 One of the biggest annoyances is dealing with different aspect ratios between your monitors, making some images look bad on some monitors, or images that just don't work well as wallpapers because they're too wide or too tall. Using different settings it's possible to crop, letterbox, or offset your wallpapers differently for all of your different aspect ratios.
@@ -71,5 +80,5 @@ Background is the colour used when padding images. It defaults to black. It can 
 ## Offsets
 Using Vertical or Horizontal values, as decimal percentages (due to TOML limitations they must include a decimal component) can give you fine-grained control over exactly how much you translate an image up/down or right/left.
 
-You can only specify Horizontal or Vertical, not both at once, and any offset can instead be done using a crop. Offsets can be slightly more efficient than cropping, but not substantially. <!-- TODO - until I implement interactive previews, where they'll be massively more efficient than cropping -->
+You can only specify Horizontal or Vertical, not both at once, and any offset can instead be done using a crop. Offsets are more efficient than cropping in interactive mode, while still handling the majority of problematic wallpapers.
 
