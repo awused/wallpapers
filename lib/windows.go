@@ -57,6 +57,9 @@ const CLSID = "{C2CF3110-460E-4fc1-B9D0-8A1C0C9CC4BD}"
 const IID = "{B92B56A9-8B55-4E14-9A89-0199BBB6F93B}"
 const DWPOS_CENTER = uintptr(0)
 
+// Monitor is counted but isn't attached to the computer
+const S_FALSE = uintptr(2147500037)
+
 var sysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 
 var modole32 = syscall.NewLazyDLL("ole32.dll")
@@ -142,23 +145,22 @@ func GetMonitors() ([]*Monitor, error) {
 		}
 
 		m := monitor{}
-		hr, _, errno := syscall.Syscall(
+		rectHR, _, errno := syscall.Syscall(
 			vtable.GetMonitorRECT,
 			3,
 			uintptr(unsafe.Pointer(desktop)),
 			uintptr(unsafe.Pointer(pathOut)),
 			uintptr(unsafe.Pointer(&m)))
-		if hr != 0 || errno != 0 {
+		if (rectHR != 0 && rectHR != S_FALSE) || errno != 0 {
 			return nil, fmt.Errorf(
-				"Unexpected value from GetMonitorRECT %d %v", hr, errno)
+				"Unexpected value from GetMonitorRECT %d %v", rectHR, errno)
 		}
-
 		// We don't really need to convert to and from []uint16 but this makes
 		// debugging easier and allows us to immediately free memory allocated
 		// outside of Go's control
 		path := syscall.UTF16ToString(pathOut[:])
 
-		hr, _, errno = syscall.Syscall(
+		_, _, errno = syscall.Syscall(
 			coTaskMemFree.Addr(),
 			1,
 			uintptr(unsafe.Pointer(pathOut)),
@@ -167,6 +169,10 @@ func GetMonitors() ([]*Monitor, error) {
 		if errno != 0 {
 			return nil, fmt.Errorf(
 				"Unexpected value from CoTaskMemFree %d, %v", hr, err)
+		}
+
+		if rectHR == S_FALSE {
+			continue
 		}
 
 		mon := Monitor{
