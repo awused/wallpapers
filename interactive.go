@@ -1,8 +1,8 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -38,7 +38,7 @@ func interactiveCommand() cli.Command {
 
 func interactiveAction(c *cli.Context) error {
 	if c.NArg() == 0 {
-		log.Fatal("Missing input file")
+		checkErr(errors.New("Missing input file"))
 	}
 
 	w, err := filepath.Abs(c.Args().First())

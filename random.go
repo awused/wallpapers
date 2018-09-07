@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/awused/go-strpick/persistent"
@@ -56,7 +57,9 @@ func randomAction(c *cli.Context) error {
 	sz, err := picker.Size()
 	checkErr(err)
 	if sz == 0 {
-		log.Fatal("No wallpapers present in OriginalDirectory")
+		fmt.Println("No wallpapers present in OriginalDirectory")
+		log.Println("No wallpapers present in OriginalDirectory")
+		return nil
 	}
 
 	inputRelPaths, err := picker.TryUniqueN(len(monitors))
