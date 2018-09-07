@@ -96,28 +96,28 @@ func tomlDouble(f float64) string {
 
 func printImageProps(ip lib.ImageProps) {
 	if ip.Vertical != 0 {
-		fmt.Printf("Vertical: %s\n", tomlDouble(ip.Vertical))
+		fmt.Printf("Vertical = %s\n", tomlDouble(ip.Vertical))
 	}
 
 	if ip.Horizontal != 0 {
-		fmt.Printf("Horizontal: %s\n", tomlDouble(ip.Horizontal))
+		fmt.Printf("Horizontal = %s\n", tomlDouble(ip.Horizontal))
 	}
 
 	if ip.Top != 0 {
-		fmt.Printf("Top: %d\n", ip.Top)
+		fmt.Printf("Top = %d\n", ip.Top)
 	}
 	if ip.Bottom != 0 {
-		fmt.Printf("Bottom: %d\n", ip.Bottom)
+		fmt.Printf("Bottom = %d\n", ip.Bottom)
 	}
 	if ip.Left != 0 {
-		fmt.Printf("Left: %d\n", ip.Left)
+		fmt.Printf("Left = %d\n", ip.Left)
 	}
 	if ip.Right != 0 {
-		fmt.Printf("Right: %d\n", ip.Right)
+		fmt.Printf("Right = %d\n", ip.Right)
 	}
 
 	if ip.Background != "" && ip.Background != "black" {
-		fmt.Printf("Background: %s\n", ip.Background)
+		fmt.Printf("Background = %s\n", ip.Background)
 	}
 }
 
