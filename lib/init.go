@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/BurntSushi/toml"
 	"github.com/awused/awconf"
 )
 
@@ -25,9 +26,9 @@ type Config struct {
 	MaxPNGWallpaperSize int64
 	CPUScale            bool
 	CPUThreads          *int
-	Props               map[string]map[string]map[string]ImageProps
 }
 
+var props map[string]map[string]map[string]ImageProps
 var conf *Config
 
 var tempDir string
@@ -56,14 +57,14 @@ func GetConfig() (*Config, error) {
 }
 
 func GetConfigImageProps(path RelativePath, m *Monitor) ImageProps {
-	if conf == nil || m == nil {
+	if conf == nil || m == nil || props == nil {
 		return ImageProps{}
 	}
 
 	slashPath := filepath.ToSlash(path)
 	x, y := aspectRatio(m)
 
-	return conf.Props[slashPath][x][y]
+	return props[slashPath][x][y]
 }
 
 // Memoize normalized aspect ratio strings per monitor resolution
@@ -206,6 +207,17 @@ func (c *Config) validate() error {
 	}
 	if !fi.IsDir() {
 		return fmt.Errorf("OriginalsDirectory [%s] is not a directory", c.OriginalsDirectory)
+	}
+
+	propsPath := filepath.Join(c.OriginalsDirectory, ".properties.toml")
+	_, err = os.Stat(propsPath)
+	if err == nil {
+		_, err = toml.DecodeFile(propsPath, &props)
+		if err != nil {
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("Unexpected error %s when opening [%s]", err, propsPath)
 	}
 
 	if c.CacheDirectory == "" {

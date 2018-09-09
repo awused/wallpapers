@@ -16,7 +16,7 @@ A tool for managing and shuffling a large number of wallpapers across multiple m
 
 `go get -u github.com/awused/wallpapers`
 
-Install with `go install -ldflags -H=windowsgui github.com/awused/wallpapers` on Windows to avoid spawning a visible console Window. Note that this will also disable stdout. <!-- TODO - include windows registry hacks in this repo -->
+Install with `go install -ldflags -H=windowsgui github.com/awused/wallpapers` on Windows to avoid spawning a visible console Window. Note that this will also disable stdout.
 
 Fill in wallpapers.toml and copy it to your choice of /usr/local/etc/wallpapers.toml, /usr/etc/wallpapers.toml, $GOBIN/wallpapers.toml, or $HOME/.wallpapers.toml. On Windows it's easiest to just drop it into your $GOPATH\bin directory.
 
@@ -68,7 +68,7 @@ On windows you'll want probably want to build a separate executable without hidi
 
 One of the biggest annoyances is dealing with different aspect ratios between your monitors, making some images look bad on some monitors, or images that just don't work well as wallpapers because they're too wide or too tall. Using different settings it's possible to crop, letterbox, or offset your wallpapers differently for all of your different aspect ratios.
 
-Settings are all set per aspect ratio. So all 16:9 monitors, regardless of their actual resolution, will use the same settings for the same wallpapers. The configuration format is also explained, with examples, in wallpapers.toml.
+Settings are all set per aspect ratio. So all 16:9 monitors, regardless of their actual resolution, will use the same settings for the same wallpapers. The configuration format is also explained, with examples, in .properties.toml, which you can place in the root of your OriginalsDirectory.
 
 
 ## Cropping/Letterboxing
