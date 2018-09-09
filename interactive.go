@@ -117,7 +117,7 @@ func printImageProps(ip lib.ImageProps) {
 	}
 
 	if ip.Background != "" && ip.Background != "black" {
-		fmt.Printf("Background = %s\n", ip.Background)
+		fmt.Printf("Background = '%s'\n", ip.Background)
 	}
 }
 

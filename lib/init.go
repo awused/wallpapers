@@ -17,6 +17,7 @@ type Config struct {
 	LogFile             string
 	Waifu2xCaffe        *string
 	Waifu2xCPP          string
+	ImageMagick7        bool
 	ImageMagick         string
 	OriginalsDirectory  string
 	CacheDirectory      string
@@ -188,7 +189,11 @@ func (c *Config) validate() error {
 	}
 
 	if c.ImageMagick == "" {
-		return fmt.Errorf("Config missing ImageMagick command")
+		if c.ImageMagick7 {
+			c.ImageMagick = "magick"
+		} else {
+			c.ImageMagick = "convert"
+		}
 	}
 
 	if c.OriginalsDirectory == "" {

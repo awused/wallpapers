@@ -128,7 +128,7 @@ func ProcessImage(po ProcessOptions) error {
 
 	// Must be done before other steps so img is set correctly
 	if po.CropOrPad {
-		validInFile, img, err = doCropOrPad(validInFile, po, img, c.ImageMagick)
+		validInFile, img, err = doCropOrPad(validInFile, po, img, c)
 		if err != nil {
 			return err
 		}
@@ -164,14 +164,14 @@ func ProcessImage(po ProcessOptions) error {
 		if err != nil {
 			return err
 		}
-		return imResize(tempFile, po.Output, po, img, c.ImageMagick)
+		return imResize(tempFile, po.Output, po, img, c)
 	} else {
-		return imResize(validInFile, po.Output, po, img, c.ImageMagick)
+		return imResize(validInFile, po.Output, po, img, c)
 	}
 }
 
 func doCropOrPad(
-	inFile AbsolutePath, po ProcessOptions, img *image.Config, magick string) (
+	inFile AbsolutePath, po ProcessOptions, img *image.Config, c *Config) (
 	AbsolutePath, *image.Config, error) {
 
 	co := po.ImageProps
@@ -210,17 +210,17 @@ func doCropOrPad(
 		co.Left,
 		co.Top)
 
-	args := []string{
-		"convert", inFile,
+	args := append(getBaseConvertArgs(c),
+		inFile,
 		"-crop", cropStr,
 		"-background", bg,
 		// This will destroy any transparency, as will the transition to bmp
 		// Users will need to set another BG colour if they have transparent images
 		// that they want to crop this way
 		"-flatten",
-		croppedFile}
+		croppedFile)
 
-	cmd := exec.Command(magick, args...)
+	cmd := exec.Command(c.ImageMagick, args...)
 	cmd.SysProcAttr = sysProcAttr
 	err = cmd.Run()
 	if err != nil {
@@ -494,7 +494,8 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 		// File might already exist from an earlier call
 		inc, err := os.Open(convertedFile)
 		if err != nil {
-			cmd := exec.Command(c.ImageMagick, "convert", inFile, convertedFile)
+			args := append(getBaseConvertArgs(c), inFile, convertedFile)
+			cmd := exec.Command(c.ImageMagick, args...)
 			cmd.SysProcAttr = sysProcAttr
 			err = cmd.Run()
 			if err != nil {
@@ -529,7 +530,7 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 	return inFile, &img, nil
 }
 
-func imResize(inFile, outFile AbsolutePath, po ProcessOptions, img *image.Config, imageMagick string) error {
+func imResize(inFile, outFile AbsolutePath, po ProcessOptions, img *image.Config, c *Config) error {
 	resStr := fmt.Sprintf("%dx%d", po.Width, po.Height)
 	modeStr := "^"
 	if po.Touch {
@@ -555,12 +556,11 @@ func imResize(inFile, outFile AbsolutePath, po ProcessOptions, img *image.Config
 		offsetString = fmt.Sprintf("%+d%+d!", int(hoff), int(voff))
 	}
 
-	args := []string{
-		"convert", inFile,
+	args := append(getBaseConvertArgs(c), inFile,
 		"-filter", "Lanczos",
-		"-resize", resStr + modeStr,
+		"-resize", resStr+modeStr,
 		"-gravity", "center",
-		"-crop", resStr + offsetString}
+		"-crop", resStr+offsetString)
 
 	if po.Flatten {
 		// Transparency appears to break when using waifu2x-caffe, so flatten
@@ -571,7 +571,7 @@ func imResize(inFile, outFile AbsolutePath, po ProcessOptions, img *image.Config
 
 	args = append(args, outFile)
 
-	cmd := exec.Command(imageMagick, args...)
+	cmd := exec.Command(c.ImageMagick, args...)
 	cmd.SysProcAttr = sysProcAttr
 	return cmd.Run()
 }
@@ -607,3 +607,11 @@ func fileExists(file AbsolutePath) bool {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd.Run()
 }*/
+
+func getBaseConvertArgs(c *Config) []string {
+	if c.ImageMagick7 {
+		return []string{"convert"}
+	}
+	return []string{}
+
+}

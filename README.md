@@ -7,7 +7,7 @@ A tool for managing and shuffling a large number of wallpapers across multiple m
 
 # Requirements
 
-* ImageMagick
+* ImageMagick (6 or 7)
 * Waifu2x
     * [waifu2x-caffe](https://github.com/lltcggie/waifu2x-caffe) is recommended on Windows with Nvidia GPUs. Untested on Linux.
     * [DeadSix27/waifu2x-converter-cpp](https://github.com/DeadSix27/waifu2x-converter-cpp) otherwise.
