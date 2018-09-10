@@ -71,7 +71,7 @@ func ShouldProcessImage(inFile, outFile AbsolutePath) (bool, error) {
 	return ofi.ModTime().Before(ifi.ModTime()), nil
 }
 
-func getMonitorCacheDirectory(cache string, m *Monitor) string {
+func GetMonitorCacheDirectory(cache string, m *Monitor) string {
 	return filepath.Join(cache, fmt.Sprintf("%dx%d", m.Width, m.Height))
 }
 
@@ -94,5 +94,5 @@ func GetCacheImagePath(relPath RelativePath, m *Monitor, co ImageProps) (
 	// This will result in double extensions (".png.png" or ".jpg.png")
 	// This is necessary to avoid name collisions since everything becomes png
 	return filepath.Abs(filepath.Join(
-		getMonitorCacheDirectory(c.CacheDirectory, m), relPath+co.String()+".png"))
+		GetMonitorCacheDirectory(c.CacheDirectory, m), relPath+co.String()+".png"))
 }

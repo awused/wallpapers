@@ -1,11 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"math"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"syscall"
 
 	"github.com/awused/go-strpick/persistent"
 	lib "github.com/awused/wallpapers/lib"
@@ -39,20 +42,17 @@ func syncCommand() cli.Command {
 func syncAction(c *cli.Context) error {
 	var syncLimit int64 = c.Int64(limit)
 
+	sigs := make(chan os.Signal, 1)
+	waitChan := make(chan struct{}, 1)
+	signal.Notify(sigs, syscall.SIGINT)
+
 	conf, err := lib.GetConfig()
 	checkErr(err)
-
-	picker, err := persistent.NewPicker(conf.DatabaseDir)
-	checkErr(err)
-	defer picker.Close()
 
 	monitors, err := lib.GetMonitors()
 	checkErr(err)
 
 	originals, err := lib.GetAllOriginals()
-	checkErr(err)
-
-	err = picker.AddAll(originals)
 	checkErr(err)
 
 	var count int32
@@ -66,15 +66,46 @@ func syncAction(c *cli.Context) error {
 		originalsProcessed++
 
 		go func(relPath lib.RelativePath) {
+			defer wg.Done()
+
+			defer func() {
+				if r := recover(); r != nil {
+					select {
+					case _, ok := <-sigs:
+						// SIGINT might have killed this child
+						if ok {
+							close(sigs)
+						}
+						return
+					default:
+					}
+				}
+			}()
+
 			processed := cacheImageForMonitors(
 				relPath, monitors, allValidFiles, &syncLimit)
 			atomic.AddInt32(&count, processed)
-			wg.Done()
 		}(relPath)
 
 		// Run in batches so that we can clean up if necessary
 		if originalsProcessed%200 == 0 {
-			wg.Wait()
+			go func() {
+				wg.Wait()
+				waitChan <- struct{}{}
+			}()
+
+			select {
+			case <-waitChan:
+			case _, ok := <-sigs:
+				if ok {
+					close(sigs)
+				}
+				// We need to make sure we clean up
+				fmt.Println("Cleaning up...")
+				atomic.StoreInt64(&syncLimit, -1)
+				lib.StopGPU()
+				<-waitChan
+			}
 
 			if syncLimit < 0 {
 				// Do not prune the cache, do not clean the DB
@@ -92,9 +123,33 @@ func syncAction(c *cli.Context) error {
 		}
 	}
 
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		waitChan <- struct{}{}
+	}()
 
-	err = pruneCache(conf.CacheDirectory, allValidFiles)
+	select {
+	case <-waitChan:
+	case _, ok := <-sigs:
+		if ok {
+			close(sigs)
+		}
+		// We need to make sure we clean up
+		fmt.Println("Cleaning up...")
+		atomic.StoreInt64(&syncLimit, -1)
+		lib.StopGPU()
+		<-waitChan
+		return nil
+	}
+
+	err = pruneCache(conf.CacheDirectory, monitors, allValidFiles)
+	checkErr(err)
+
+	picker, err := persistent.NewPicker(conf.DatabaseDir)
+	checkErr(err)
+	defer picker.Close()
+
+	err = picker.AddAll(originals)
 	checkErr(err)
 
 	err = picker.CleanDB()
@@ -102,22 +157,31 @@ func syncAction(c *cli.Context) error {
 	return nil
 }
 
-func pruneCache(cacheDir string, allValidFiles *sync.Map) error {
-	return filepath.Walk(cacheDir, func(path string, f os.FileInfo, err error) error {
+func pruneCache(cacheDir string, monitors []*lib.Monitor, allValidFiles *sync.Map) error {
+	for _, m := range monitors {
+		err := filepath.Walk(
+			lib.GetMonitorCacheDirectory(cacheDir, m),
+			func(path string, f os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+
+				if f.Mode().IsRegular() {
+					absPath, err := filepath.Abs(path)
+					_, valid := allValidFiles.Load(absPath)
+					if err == nil && filepath.Ext(path) == ".png" && !valid {
+						return os.Remove(path)
+					}
+				}
+
+				return nil
+			})
 		if err != nil {
 			return err
 		}
+	}
 
-		if f.Mode().IsRegular() {
-			absPath, err := filepath.Abs(path)
-			_, valid := allValidFiles.Load(absPath)
-			if err == nil && filepath.Ext(path) == ".png" && !valid {
-				return os.Remove(path)
-			}
-		}
-
-		return nil
-	})
+	return nil
 }
 
 func cacheImageForMonitors(
@@ -125,6 +189,7 @@ func cacheImageForMonitors(
 	monitors []*lib.Monitor,
 	allValidFiles *sync.Map,
 	syncLimit *int64) int32 {
+
 	if atomic.LoadInt64(syncLimit) < 0 {
 		return 0
 	}
@@ -186,6 +251,9 @@ func cacheImageForMonitors(
 		}
 
 		err = lib.ProcessImage(po)
+		if err == lib.ErrStopped {
+			return count
+		}
 		checkErr(err)
 
 		// Renaming should be atomic enough for our purposes

@@ -24,6 +24,8 @@ type Monitor struct {
 	Width     int
 	Height    int
 	path      string
+	aspectX   string
+	aspectY   string
 	Wallpaper AbsolutePath
 }
 
@@ -187,7 +189,7 @@ func GetMonitors() ([]*Monitor, error) {
 	// Prime the aspect ratio caches, completely avoiding the need for locking
 	// when syncing the cache since they'll be effectively read only
 	for _, m := range monitors {
-		aspectRatio(m)
+		m.aspectX, m.aspectY = aspectRatio(m)
 	}
 
 	return monitors, nil

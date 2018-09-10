@@ -64,36 +64,18 @@ func GetConfigImageProps(path RelativePath, m *Monitor) ImageProps {
 	}
 
 	slashPath := filepath.ToSlash(path)
-	x, y := aspectRatio(m)
 
-	return props[slashPath][x][y]
+	return props[slashPath][m.aspectX][m.aspectY]
 }
 
-// Memoize normalized aspect ratio strings per monitor resolution
-// Not even sure if this is worth doing, but the code has been written
-var xMap = make(map[int]map[int]string)
-var yMap = make(map[int]map[int]string)
-
 func aspectRatio(m *Monitor) (string, string) {
-	x, y := xMap[m.Width][m.Height], yMap[m.Width][m.Height]
+	a, b := m.Width, m.Height
 
-	if x == "" {
-		a, b := m.Width, m.Height
-
-		for b != 0 {
-			a, b = b, a%b
-		}
-
-		if _, ok := xMap[m.Width]; !ok {
-			xMap[m.Width] = make(map[int]string)
-			yMap[m.Width] = make(map[int]string)
-		}
-		xMap[m.Width][m.Height] = strconv.Itoa(m.Width / a)
-		yMap[m.Width][m.Height] = strconv.Itoa(m.Height / a)
-
-		x, y = xMap[m.Width][m.Height], yMap[m.Width][m.Height]
+	for b != 0 {
+		a, b = b, a%b
 	}
-	return x, y
+
+	return strconv.Itoa(m.Width / a), strconv.Itoa(m.Height / a)
 }
 
 // Be sure to defer Cleanup() after calling this

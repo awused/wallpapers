@@ -3,6 +3,7 @@ package changewallpaperlib
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"image"
@@ -25,6 +26,16 @@ import (
 )
 
 var gpuLock sync.Mutex
+
+var closeChan = make(chan struct{})
+
+var ErrStopped = errors.New("Processing stopped with StopGPU")
+
+// Stops doing any additional processing on the GPU
+// Will wait for any ongoing actions to finish
+func StopGPU() {
+	close(closeChan)
+}
 
 // Offset arguments for cropping, expressed as positive or negative percentages
 // of the image. Setting both at once is a mistake, right now.
@@ -153,6 +164,13 @@ func ProcessImage(po ProcessOptions) error {
 			// Lock the "GPU" even if we're CPU scaling.
 			// You're not going to do more than one model at a time on any CPU.
 			gpuLock.Lock()
+			select {
+			case <-closeChan:
+				gpuLock.Unlock()
+				return ErrStopped
+			default:
+			}
+
 			if c.Waifu2xCaffe != nil {
 				err = caffeProcess(validInFile, tempFile, scale, po.Denoise, c)
 			} else {

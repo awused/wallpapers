@@ -35,6 +35,8 @@ type Monitor struct {
 	Height    int
 	left      int
 	top       int
+	aspectX   string
+	aspectY   string
 	Wallpaper AbsolutePath
 	// Potentially support multiple sessions in the future
 	session *session
@@ -151,5 +153,10 @@ func GetMonitors() ([]*Monitor, error) {
 		}
 		monitors = append(monitors, ms...)
 	}
+
+	for _, m := range monitors {
+		m.aspectX, m.aspectY = aspectRatio(m)
+	}
+
 	return monitors, nil
 }
