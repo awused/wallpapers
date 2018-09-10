@@ -13,8 +13,6 @@ import (
 	"golang.org/x/sys/windows/registry"
 )
 
-const WINDOWS = true
-
 type monitor struct {
 	left   int32
 	top    int32
@@ -25,7 +23,7 @@ type monitor struct {
 type Monitor struct {
 	Width     int
 	Height    int
-	Path      string
+	path      string
 	Wallpaper AbsolutePath
 }
 
@@ -182,7 +180,7 @@ func GetMonitors() ([]*Monitor, error) {
 			// Bottom: m.bottom,
 			Width:  int(m.right - m.left),
 			Height: int(m.bottom - m.top),
-			Path:   path}
+			path:   path}
 		monitors = append(monitors, &mon)
 	}
 
@@ -232,7 +230,7 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 			vtable.SetWallpaper,
 			3,
 			uintptr(unsafe.Pointer(desktop)),
-			uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(m.Path))),
+			uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(m.path))),
 			uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(m.Wallpaper))))
 		if hr != 0 {
 			return fmt.Errorf("Unexpected value from SetWallpaper %d", hr)

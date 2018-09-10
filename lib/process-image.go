@@ -322,7 +322,12 @@ func w2xcppProcess(
 
 	// Force OpenCL to avoid CUDA, which is currently (2018-08)
 	// broken in waifu2x-converter-cpp
-	args := []string{"-m", mode, "-i", inFile, "-o", outFile, "--force-OpenCL"}
+	args := []string{
+		"-m", mode,
+		"-i", inFile,
+		"-o", outFile,
+		"--force-OpenCL",
+		"--model_dir", c.Waifu2xCPPModels}
 	if scale != 1 {
 		args = append(args, "--scale_ratio", strconv.Itoa(scale))
 	}
@@ -340,18 +345,12 @@ func w2xcppProcess(
 	}
 
 	cmd := exec.Command(c.Waifu2xCPP, args...)
-	if WINDOWS {
-		cmd.Dir = filepath.Dir(c.Waifu2xCPP)
-	}
 	cmd.SysProcAttr = sysProcAttr
 	err := cmd.Run()
 	if err != nil {
 		// Uncertain if CUDA and OpenCL run into the same problem, but try anyway
 		time.Sleep(5 * time.Second)
 		cmd := exec.Command(c.Waifu2xCPP, args...)
-		if WINDOWS {
-			cmd.Dir = filepath.Dir(c.Waifu2xCPP)
-		}
 		cmd.SysProcAttr = sysProcAttr
 		err = cmd.Run()
 		if err != nil {

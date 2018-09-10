@@ -4,6 +4,7 @@ Wallpapers
 A tool for managing and shuffling a large number of wallpapers across multiple monitors, using waifu2x for upscaling. Runs on Windows 8 and up.
 
 <!-- TODO - And Linux, but with what limitations? -->
+Support will be added for linux based on whatever DE/WMs I end up using unless someone else wants to submit a pull request.
 
 # Requirements
 
@@ -11,6 +12,19 @@ A tool for managing and shuffling a large number of wallpapers across multiple m
 * Waifu2x
     * [waifu2x-caffe](https://github.com/lltcggie/waifu2x-caffe) is recommended on Windows with Nvidia GPUs. Untested on Linux.
     * [DeadSix27/waifu2x-converter-cpp](https://github.com/DeadSix27/waifu2x-converter-cpp) otherwise.
+* Linux only:
+    * bash must be available
+
+## Linux support
+
+* gnome 3.2 on X11
+    * Stores stitched wallpapers in $HOME/.wallpapers by default
+<!-- probably will support i3/x11 soon, maybe gnome/wayland if I can be bothered to try -->
+
+### Limitations
+
+* Limited to one X server
+* Uses the current X server or the first one found with monitors attached
 
 # Usage
 
@@ -35,7 +49,7 @@ The random command will set one random wallpaper randomly on each monitor. It fa
 
 If one of the selected wallpapers hasn't been cached it will perform the same upscaling and caching as sync. If you're running this as part of a periodic task or cron job this can interrupt whatever you are doing by stressing your GPU, so it's recommended to run sync manually so you can control the timing.
 
-The --unlocked flag can be used to avoid changing wallpapers when the screen is locked, if you're running it using cron or a scheduled task.
+The --unlocked flag can be used to avoid changing wallpapers when the screen is locked, if you're running it using cron or a scheduled task. (Not yet supported on Linux)
 
 ### Preview
 

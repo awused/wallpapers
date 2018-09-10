@@ -6,6 +6,12 @@ OriginalsDirectory = 'C:\path\to\originals'
 # This directory must be created manually.
 CacheDirectory = 'C:\path\to\wallpaper-cache'
 
+# Directory where stitched together wallpapers should be stored
+# Only used for incapable desktop environments, like gnome
+# This program may delete any wallpapers you manually create here
+# Defaults to $HOME/.wallpapers
+# OutputDir = ''
+
 # Uncomment to log errors to a file instead of stdout.
 # LogFile = 'C:\Logs\wallpapers.log'
 
@@ -25,10 +31,13 @@ TempDirectory = 'C:\temp'
 
 # Where to find waifu2x-converter-cpp.
 # Does not need to be installed if waifu2x-caffe is used instead.
-# On Windows this must be a full, absolute path (C:\path\to\waifu2x-converter-cpp.exe).
 # Only tested with https://github.com/DeadSix27/waifu2x-converter-cpp, other forks may or may not work.
 # It's recommended to use waifu2x-caffe on Windows if you have an nvidia GPU for better performance, but this should work on any system.
 Waifu2xCPP = 'C:\path\to\waifu2x-converter-cpp.exe'
+
+# Where to find waifu2x-converter-cpp's models_rgb directory
+# No trailing slash
+Waifu2xCPPModels = 'C:\path\to\waifu2x-converter-cpp\models_rgb'
 
 # Uncomment to do waifu2x scaling on the CPU.
 # Not recommended, even for background processing, unless you're very patient.

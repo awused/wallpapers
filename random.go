@@ -57,8 +57,11 @@ func randomAction(c *cli.Context) error {
 	sz, err := picker.Size()
 	checkErr(err)
 	if sz == 0 {
+		// Also log to stdout since this doesn't panic
 		fmt.Println("No wallpapers present in OriginalDirectory")
-		log.Println("No wallpapers present in OriginalDirectory")
+		if conf.LogFile != "" {
+			log.Println("No wallpapers present in OriginalDirectory")
+		}
 		return nil
 	}
 

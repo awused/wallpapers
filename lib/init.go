@@ -15,9 +15,11 @@ import (
 type Config struct {
 	DatabaseDir         string
 	TempDirectory       string
+	OutputDir           string
 	LogFile             string
 	Waifu2xCaffe        *string
 	Waifu2xCPP          string
+	Waifu2xCPPModels    string
 	ImageMagick7        bool
 	ImageMagick         string
 	OriginalsDirectory  string
@@ -232,8 +234,28 @@ func (c *Config) validate() error {
 		return fmt.Errorf("CacheDirectory [%s] is not a directory", c.CacheDirectory)
 	}
 
+	if c.OutputDir == "" {
+		c.OutputDir = filepath.Join(os.Getenv("HOME"), ".wallpapers")
+	}
+
+	fi, err = os.Stat(c.OutputDir)
+	if err == nil && !fi.IsDir() {
+		return fmt.Errorf("OutputDir [%s] is a regular file", c.OutputDir)
+	} else if err != nil {
+		if os.IsNotExist(err) {
+			err = os.MkdirAll(c.OutputDir, 0755)
+			if err != nil {
+				return fmt.Errorf(
+					"Error creating OutputDir [%s]: %s", c.OutputDir, err)
+			}
+		} else {
+			return fmt.Errorf(
+				"Error calling os.Stat on OutputDir [%s]: %s", c.OutputDir, err)
+		}
+	}
+
 	if len(c.ImageFileExtensions) == 0 {
-		return fmt.Errorf("No OriginalsDirectories present in config")
+		return fmt.Errorf("No ImageFileExtensions present in config")
 	}
 
 	return nil
