@@ -4,6 +4,7 @@ package changewallpaperlib
 
 import (
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -75,6 +76,12 @@ func getNextOutputFile(c *Config) (AbsolutePath, error) {
 }
 
 func setGnomeWallpaper(wallpaper AbsolutePath, c *Config) error {
+	err := os.MkdirAll(c.OutputDir, 0755)
+	if err != nil {
+		return fmt.Errorf(
+			"Error creating OutputDir [%s]: %s", c.OutputDir, err)
+	}
+
 	oldWall, err := runBash(`
 		gsettings get org.gnome.desktop.background picture-uri
 	`)

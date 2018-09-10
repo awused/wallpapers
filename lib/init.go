@@ -224,13 +224,7 @@ func (c *Config) validate() error {
 	if err == nil && !fi.IsDir() {
 		return fmt.Errorf("OutputDir [%s] is a regular file", c.OutputDir)
 	} else if err != nil {
-		if os.IsNotExist(err) {
-			err = os.MkdirAll(c.OutputDir, 0755)
-			if err != nil {
-				return fmt.Errorf(
-					"Error creating OutputDir [%s]: %s", c.OutputDir, err)
-			}
-		} else {
+		if !os.IsNotExist(err) {
 			return fmt.Errorf(
 				"Error calling os.Stat on OutputDir [%s]: %s", c.OutputDir, err)
 		}
