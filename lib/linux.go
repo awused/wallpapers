@@ -75,11 +75,20 @@ func getNextOutputFile(c *Config) (AbsolutePath, error) {
 	return f.Name(), nil
 }
 
-func setGnomeWallpaper(wallpaper AbsolutePath, c *Config) error {
+func setGnomeWallpaper(monitors []*Monitor, c *Config) error {
 	err := os.MkdirAll(c.OutputDir, 0755)
 	if err != nil {
 		return fmt.Errorf(
 			"Error creating OutputDir [%s]: %s", c.OutputDir, err)
+	}
+
+	wallpaper, err := getNextOutputFile(c)
+	if err != nil {
+		return err
+	}
+	err = combineImages(monitors, wallpaper)
+	if err != nil {
+		return err
 	}
 
 	oldWall, err := runBash(`
@@ -116,31 +125,52 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 		return err
 	}
 
-	// Right now we know we're dealing with one single session that is gnome, so don't even check
+	// TODO -- group monitors by sessions, then set every monitor in each session
+
+	// X Session
 	if true {
 		os.Setenv("DISPLAY", monitors[0].session.display)
+	}
+
+	// Per-User DBUS session detected
+	if true {
 		err = setDBUSAddress()
 		if err != nil {
 			return err
 		}
+	}
 
-		wallpaper, err := getNextOutputFile(c)
-		if err != nil {
-			return err
-		}
-		err = combineImages(monitors, wallpaper)
-		if err != nil {
-			return err
-		}
+	// GNOME detected for this session
+	// Probably should abort if we ever detect more than one gnome session
+	if true {
 
-		return setGnomeWallpaper(wallpaper, c)
+		return setGnomeWallpaper(monitors, c)
 	}
 
 	return errors.New("Not yet implemented")
 }
 
-// Might need to change the API or call it after getting sessions
+// TODO -- refactor this so it's called inside GetMonitors and filters them
 func CheckIfLocked() (bool, error) {
+
+	// per-user dbus detected
+	if true {
+		setDBUSAddress()
+	}
+
+	// Again assuming GNOME
+	if true {
+
+		out, err := runBash(`
+	gdbus call -e -d org.gnome.ScreenSaver -o /org/gnome/ScreenSaver -m org.gnome.ScreenSaver.GetActive | sed -e 's/[^a-zA-Z]//g'
+	`)
+		// We do not care about errors here. Assume it's unlocked
+		if err != nil {
+			return false, nil
+		}
+		return strings.TrimSpace(out) == "true", nil
+	}
+
 	return false, nil
 }
 

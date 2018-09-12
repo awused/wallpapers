@@ -17,7 +17,7 @@ func randomCommand() cli.Command {
 	cmd.Usage = "Randomly select a wallpaper for each monitor"
 	cmd.Before = beforeFunc
 	cmd.Flags = []cli.Flag{
-		cli.BoolTFlag{
+		cli.BoolFlag{
 			Name:  unlocked + ", u",
 			Usage: "Checks to see if the screen is unlocked and aborts if it is",
 		},
@@ -36,7 +36,7 @@ func randomAction(c *cli.Context) error {
 	checkErr(err)
 	defer picker.Close()
 
-	if c.Bool(unlocked) {
+	if c.BoolT(unlocked) {
 		locked, err := lib.CheckIfLocked()
 		checkErr(err)
 		if locked {
