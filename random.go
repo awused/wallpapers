@@ -32,11 +32,7 @@ func randomAction(c *cli.Context) error {
 	conf, err := lib.GetConfig()
 	checkErr(err)
 
-	picker, err := persistent.NewPicker(conf.DatabaseDir)
-	checkErr(err)
-	defer picker.Close()
-
-	if c.BoolT(unlocked) {
+	if c.Bool(unlocked) {
 		locked, err := lib.CheckIfLocked()
 		checkErr(err)
 		if locked {
@@ -47,6 +43,17 @@ func randomAction(c *cli.Context) error {
 
 	monitors, err := lib.GetMonitors()
 	checkErr(err)
+
+	if len(monitors) == 0 {
+		if !c.Bool(unlocked) {
+			log.Println("No monitors detected.")
+		}
+		return nil
+	}
+
+	picker, err := persistent.NewPicker(conf.DatabaseDir)
+	checkErr(err)
+	defer picker.Close()
 
 	originals, err := lib.GetAllOriginals()
 	checkErr(err)

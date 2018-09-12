@@ -2,7 +2,9 @@ package main
 
 import (
 	"errors"
+	"log"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	lib "github.com/awused/wallpapers/lib"
@@ -85,10 +87,21 @@ func previewAction(c *cli.Context) error {
 		Right:      c.Int(right),
 		Background: c.String(background)}
 
-	previewWallpaperUsingFakeCache(w, imageProps)
+	monitors, err := lib.GetMonitors()
+	checkErr(err)
+
+	if len(monitors) == 0 {
+		log.Println("No monitors detected.")
+		return nil
+	}
+
+	previewWallpaperUsingFakeCache(w, imageProps, monitors)
 
 	// Windows will fail to read the wallpapers if we delete them too fast
-	<-time.After(5 * time.Second)
+	// lib.ShouldWait() ?
+	if runtime.GOOS == "windows" {
+		<-time.After(5 * time.Second)
+	}
 	return nil
 }
 
@@ -105,12 +118,9 @@ func redirectCache() {
 }
 
 func previewWallpaperUsingFakeCache(
-	wallpaper string, imageProps lib.ImageProps) {
+	wallpaper string, imageProps lib.ImageProps, monitors []*lib.Monitor) {
 
 	redirectCache()
-
-	monitors, err := lib.GetMonitors()
-	checkErr(err)
 
 	outFiles := make([]string, len(monitors))
 	scaledFiles := make([]string, len(monitors))
@@ -163,6 +173,6 @@ MonitorLoop:
 		checkErr(err)
 	}
 
-	err = lib.SetMonitorWallpapers(monitors)
+	err := lib.SetMonitorWallpapers(monitors)
 	checkErr(err)
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"os"
 	"os/signal"
@@ -51,6 +52,10 @@ func syncAction(c *cli.Context) error {
 
 	monitors, err := lib.GetMonitors()
 	checkErr(err)
+
+	if len(monitors) == 0 {
+		log.Println("No monitors detected. Only cleaning database")
+	}
 
 	originals, err := lib.GetAllOriginals()
 	checkErr(err)

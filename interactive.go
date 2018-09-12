@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -170,8 +171,16 @@ func promptUntilDone(wallpaper string) {
 		"bg ":            setString(&imageProps.Background),
 	}
 
+	monitors, err := lib.GetMonitors()
+	checkErr(err)
+
+	if len(monitors) == 0 {
+		log.Println("No monitors detected.")
+		return
+	}
+
 	fmt.Println("Previewing...")
-	previewWallpaperUsingFakeCache(wallpaper, imageProps)
+	interactivePreview(wallpaper, imageProps, monitors)
 
 PromptLoop:
 	for {
@@ -187,7 +196,7 @@ PromptLoop:
 		if in == "reset" {
 			imageProps = lib.ImageProps{}
 
-			previewWallpaperUsingFakeCache(wallpaper, imageProps)
+			interactivePreview(wallpaper, imageProps, monitors)
 			continue
 		}
 
@@ -196,7 +205,7 @@ PromptLoop:
 			if strings.HasPrefix(in, s) {
 				e(in, s)
 
-				interactivePreview(wallpaper, imageProps)
+				interactivePreview(wallpaper, imageProps, monitors)
 				continue PromptLoop
 			}
 		}
@@ -205,7 +214,7 @@ PromptLoop:
 	}
 }
 
-func interactivePreview(w string, imageProps lib.ImageProps) {
+func interactivePreview(w string, imageProps lib.ImageProps, monitors []*lib.Monitor) {
 	defer func() {
 		r := recover()
 		if r != nil {
@@ -213,5 +222,5 @@ func interactivePreview(w string, imageProps lib.ImageProps) {
 		}
 	}()
 
-	previewWallpaperUsingFakeCache(w, imageProps)
+	previewWallpaperUsingFakeCache(w, imageProps, monitors)
 }
