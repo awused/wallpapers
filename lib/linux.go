@@ -115,6 +115,18 @@ func setGnomeWallpaper(monitors []*Monitor, c *Config) error {
 	return nil
 }
 
+func setFehWallpapers(monitors []*Monitor) error {
+	args := []string{"--bg-center"}
+
+	for _, m := range monitors {
+		args = append(args, m.Wallpaper)
+	}
+
+	cmd := exec.Command("feh", args...)
+	cmd.SysProcAttr = sysProcAttr
+	return cmd.Run()
+}
+
 func SetMonitorWallpapers(monitors []*Monitor) error {
 	if len(monitors) == 0 {
 		return nil
@@ -126,11 +138,11 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 	}
 
 	// TODO -- group monitors by sessions, then set every monitor in each session
+	// for _, s := range sessions {
 
-	// X Session
-	if true {
-		os.Setenv("DISPLAY", monitors[0].session.display)
-	}
+	s := monitors[0].session
+
+	os.Setenv("DISPLAY", s.display)
 
 	// Per-User DBUS session detected
 	if true {
@@ -142,9 +154,12 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 
 	// GNOME detected for this session
 	// Probably should abort if we ever detect more than one gnome session
-	if true {
-
+	if s.env == gnome {
 		return setGnomeWallpaper(monitors, c)
+	}
+
+	if s.env == i3 || s.env == unknown {
+		return setFehWallpapers(monitors)
 	}
 
 	return errors.New("Not yet implemented")
@@ -158,14 +173,29 @@ func CheckIfLocked() (bool, error) {
 		setDBUSAddress()
 	}
 
+	// TODO -- refactor this properly.
+	// Check for i3lock first
+	if true {
+		out, err := runBash(`
+			pgrep -u $USER i3lock || test $? = 1
+		`)
+
+		if err != nil {
+			return false, nil
+		}
+
+		if strings.TrimSpace(out) != "" {
+			return true, nil
+		}
+	}
+
 	// Again assuming GNOME
 	if true {
-
 		out, err := runBash(`
 	gdbus call -e -d org.gnome.ScreenSaver -o /org/gnome/ScreenSaver -m org.gnome.ScreenSaver.GetActive | sed -e 's/[^a-zA-Z]//g'
 	`)
 		// We do not care about errors here. Assume it's unlocked
-		if err != nil {
+		if err == nil {
 			return false, nil
 		}
 		return strings.TrimSpace(out) == "true", nil

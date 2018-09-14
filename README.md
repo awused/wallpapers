@@ -14,12 +14,15 @@ Support will be added for linux based on whatever DE/WMs I end up using unless s
     * [DeadSix27/waifu2x-converter-cpp](https://github.com/DeadSix27/waifu2x-converter-cpp) otherwise.
 * Linux only:
     * bash must be available
+    * Feh is required whenever it is capable of setting wallpapers
 
 ## Linux support
 
 * gnome 3.2 on X11
     * Stores stitched wallpapers in $HOME/.wallpapers by default
-<!-- probably will support i3/x11 soon, maybe gnome/wayland if I can be bothered to try -->
+* i3 and other X11 WM/DEs that work with feh
+    * Uses fehbg, so add "~/.fehbg" to your startup scripts to restore
+    * --unlocked only looks for i3lock, which isn't even necessarily true on i3
 
 ### Limitations
 

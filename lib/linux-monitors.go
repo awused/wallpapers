@@ -4,6 +4,7 @@ package changewallpaperlib
 
 import (
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/BurntSushi/xgb"
 	"github.com/BurntSushi/xgbutil"
+	"github.com/BurntSushi/xgbutil/ewmh"
 	"github.com/BurntSushi/xgbutil/xinerama"
 )
 
@@ -23,7 +25,9 @@ const (
 )
 
 const (
-	gnome environment = iota
+	gnome   environment = iota
+	i3      environment = iota
+	unknown environment = iota
 )
 
 type session struct {
@@ -74,8 +78,10 @@ func listSessionIDs() ([]string, error) {
 		}
 	}
 
-	displays, err := runBash(`w "$USER" | grep ' :[0-9]*' | awk '{print $2}'`)
+	displays, err := runBash(
+		`w "$USER" | { grep ' :[0-9]*' || test $? = 1; } | awk '{print $2}'`)
 	if err != nil {
+		fmt.Println("here")
 		return nil, err
 	}
 
@@ -86,7 +92,7 @@ func listSessionIDs() ([]string, error) {
 		}
 	}
 
-	return nil, errors.New("No Supported sessions found")
+	return nil, nil
 }
 
 func listSessions() ([]session, error) {
@@ -104,34 +110,60 @@ func listSessions() ([]session, error) {
 		}
 		s.sType = t
 
-		// TODO -- Do something here
-		s.env = gnome
 		output = append(output, s)
 	}
 	return output, nil
 }
 
+func getXSessionData(s *session) ([]*Monitor, error) {
+	monitors := []*Monitor{}
+	X, err := xgbutil.NewConnDisplay(s.display)
+	if err != nil {
+		return nil, err
+	}
+
+	wm, err := ewmh.GetEwmhWM(X)
+	if err != nil {
+		return nil, err
+	}
+
+	wm = strings.ToLower(wm)
+	if strings.Contains(wm, "gnome") {
+		s.env = gnome
+	} else if wm == "i3" {
+		s.env = i3
+	} else {
+		// Feh probably works
+		fmt.Fprintf(os.Stderr, "Encountered unknown WM/DE: %s\n", wm)
+		s.env = unknown
+	}
+
+	heads, err := xinerama.PhysicalHeads(X)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, h := range heads {
+		m := Monitor{session: s}
+		m.left = h.X()
+		m.top = h.Y()
+		m.Width = h.Width()
+		m.Height = h.Height()
+		monitors = append(monitors, &m)
+	}
+
+	return monitors, nil
+}
+
 func monitorsForSession(s *session) ([]*Monitor, error) {
 	monitors := []*Monitor{}
 	if s.sType == xType {
-		X, err := xgbutil.NewConnDisplay(s.display)
+		ms, err := getXSessionData(s)
 		if err != nil {
 			return nil, err
 		}
 
-		heads, err := xinerama.PhysicalHeads(X)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, h := range heads {
-			m := Monitor{session: s}
-			m.left = h.X()
-			m.top = h.Y()
-			m.Width = h.Width()
-			m.Height = h.Height()
-			monitors = append(monitors, &m)
-		}
+		monitors = append(monitors, ms...)
 	}
 
 	return monitors, nil
