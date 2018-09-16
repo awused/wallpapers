@@ -22,7 +22,6 @@ import (
 	"golang.org/x/image/bmp"
 	//"strings"
 	"syscall"
-	"unicode"
 )
 
 var gpuLock sync.Mutex
@@ -210,7 +209,7 @@ func doCropOrPad(
 	newimg.Width -= co.Left + co.Right
 	newimg.Height -= co.Top + co.Bottom
 
-	croppedFile := filepath.Join(tdir, hashPath(inFile)+cropOrPadStr+"-cropped.png")
+	croppedFile := filepath.Join(tdir, hashPath(inFile)+cropOrPadStr+"-cropped.bmp")
 
 	if fileExists(croppedFile) {
 		return croppedFile, img, nil
@@ -483,22 +482,12 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 			fmt.Errorf("Input image [%s] is not a regular file", inFile)
 	}
 
-	// TODO -- Confirm if this is still true
-	// Waifu2x CLI interface doesn't accept unicode from Go
-	// treat unicode input as if it needs to be converted
-	shouldRename := false
-	for _, chr := range inFile {
-		if chr > unicode.MaxASCII {
-			shouldRename = true
-			break
-		}
-	}
-
+	// DecodeConfig should be more efficient than imagemagick's identify
 	img, _, err := image.DecodeConfig(in)
 	if err != nil && err != image.ErrFormat && err != bmp.ErrUnsupported {
 		return "", nil, err
 	}
-	if err != nil || shouldRename {
+	if err != nil {
 		tdir, err := TempDir()
 		if err != nil {
 			return "", nil, err
@@ -506,12 +495,18 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 
 		// Go has rather limited image format support
 		// try to use imagemagick to convert to a supported format
-		// Don't use BMP because the BMP library is very limited
+		// Don't use BMP because we don't want to clobber transparency yet
 		convertedFile := filepath.Join(tdir, hashPath(inFile)+"-converted.png")
 		// File might already exist from an earlier call
 		inc, err := os.Open(convertedFile)
 		if err != nil {
-			args := append(getBaseConvertArgs(c), inFile, convertedFile)
+			args := append(
+				getBaseConvertArgs(c),
+				// Use the fastest compression settings
+				"-define", "png:compression-level=0",
+				// Huffman over zlib for anime
+				"-define", "png:compression-strategy=2",
+				inFile, convertedFile)
 			cmd := exec.Command(c.ImageMagick, args...)
 			cmd.SysProcAttr = sysProcAttr
 			err = cmd.Run()
@@ -626,9 +621,10 @@ func fileExists(file AbsolutePath) bool {
 }*/
 
 func getBaseConvertArgs(c *Config) []string {
+	args := []string{}
 	if c.ImageMagick7 {
-		return []string{"convert"}
+		args = []string{"convert"}
 	}
-	return []string{}
 
+	return args
 }
