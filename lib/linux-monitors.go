@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"strings"
 	"syscall"
 
@@ -64,11 +65,22 @@ func getSessionType(display string) (sessionType, error) {
 	return -1, errors.New("Unknown session type")
 }
 
+var displayRE = regexp.MustCompile(`^:[0-9]+`)
+
+// Trims individual screens out of an X11 (todo wayland) DISPLAY variable
+func trimDisplay(display string) string {
+	trimmed := displayRE.FindString(display)
+	if trimmed != "" {
+		return trimmed
+	}
+	return display
+}
+
 // TODO -- return more than one
 // TODO -- don't pre-check for X
 func listSessionIDs() ([]string, error) {
 	// If $DISPLAY is set we just check to see if it's an X session
-	d := os.Getenv("DISPLAY")
+	d := trimDisplay(os.Getenv("DISPLAY"))
 	if d != "" {
 		if testXSession(d) {
 			return []string{d}, nil
@@ -81,7 +93,6 @@ func listSessionIDs() ([]string, error) {
 	displays, err := runBash(
 		`w "$USER" | { grep ' :[0-9]*' || test $? = 1; } | awk '{print $2}'`)
 	if err != nil {
-		fmt.Println("here")
 		return nil, err
 	}
 

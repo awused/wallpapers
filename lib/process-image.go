@@ -626,5 +626,7 @@ func getBaseConvertArgs(c *Config) []string {
 		args = []string{"convert"}
 	}
 
+	args = append(args, "-define", "bmp:format=bmp3")
+
 	return args
 }
