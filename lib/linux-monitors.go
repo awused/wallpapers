@@ -12,8 +12,7 @@ import (
 	"syscall"
 
 	"github.com/BurntSushi/xgb"
-	"github.com/BurntSushi/xgb/randr"
-	"github.com/BurntSushi/xgb/xproto"
+	"github.com/BurntSushi/xgb/xinerama"
 	"github.com/BurntSushi/xgbutil"
 	"github.com/BurntSushi/xgbutil/ewmh"
 )
@@ -151,27 +150,20 @@ func getXSessionData(s *session) ([]*Monitor, error) {
 		s.env = unknown
 	}
 
-	err = randr.Init(Xgb)
+	err = xinerama.Init(Xgb)
 	if err != nil {
 		return nil, err
 	}
 
-	root := xproto.Setup(Xgb).DefaultScreen(Xgb).Root
-
-	resources, err := randr.GetScreenResources(Xgb, root).Reply()
+	reply, err := xinerama.QueryScreens(Xgb).Reply()
 	if err != nil {
 		return nil, err
 	}
 
-	for _, crtc := range resources.Crtcs {
-		info, err := randr.GetCrtcInfo(Xgb, crtc, 0).Reply()
-		if err != nil {
-			return nil, err
-		}
-
+	for _, info := range reply.ScreenInfo {
 		m := Monitor{session: s}
-		m.left = int(info.X)
-		m.top = int(info.Y)
+		m.left = int(info.XOrg)
+		m.top = int(info.YOrg)
 		m.Width = int(info.Width)
 		m.Height = int(info.Height)
 		monitors = append(monitors, &m)
