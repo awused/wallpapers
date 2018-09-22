@@ -12,9 +12,10 @@ import (
 	"syscall"
 
 	"github.com/BurntSushi/xgb"
+	"github.com/BurntSushi/xgb/randr"
+	"github.com/BurntSushi/xgb/xproto"
 	"github.com/BurntSushi/xgbutil"
 	"github.com/BurntSushi/xgbutil/ewmh"
-	"github.com/BurntSushi/xgbutil/xinerama"
 )
 
 type sessionType int
@@ -132,6 +133,7 @@ func getXSessionData(s *session) ([]*Monitor, error) {
 	if err != nil {
 		return nil, err
 	}
+	Xgb := X.Conn()
 
 	wm, err := ewmh.GetEwmhWM(X)
 	if err != nil {
@@ -149,17 +151,29 @@ func getXSessionData(s *session) ([]*Monitor, error) {
 		s.env = unknown
 	}
 
-	heads, err := xinerama.PhysicalHeads(X)
+	err = randr.Init(Xgb)
 	if err != nil {
 		return nil, err
 	}
 
-	for _, h := range heads {
+	root := xproto.Setup(Xgb).DefaultScreen(Xgb).Root
+
+	resources, err := randr.GetScreenResources(Xgb, root).Reply()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, crtc := range resources.Crtcs {
+		info, err := randr.GetCrtcInfo(Xgb, crtc, 0).Reply()
+		if err != nil {
+			return nil, err
+		}
+
 		m := Monitor{session: s}
-		m.left = h.X()
-		m.top = h.Y()
-		m.Width = h.Width()
-		m.Height = h.Height()
+		m.left = int(info.X)
+		m.top = int(info.Y)
+		m.Width = int(info.Width)
+		m.Height = int(info.Height)
 		monitors = append(monitors, &m)
 	}
 
