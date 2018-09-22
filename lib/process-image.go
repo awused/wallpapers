@@ -375,7 +375,6 @@ func w2xcppProcess(
 	}
 
 	cmd := exec.Command(c.Waifu2xCPP, args...)
-	fmt.Println(args)
 	cmd.SysProcAttr = sysProcAttr
 	err := cmd.Run()
 	if err != nil {
