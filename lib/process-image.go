@@ -315,6 +315,8 @@ func caffeProcessModel(
 		// the last call. Retry after a short delay.
 		time.Sleep(5 * time.Second)
 		cmd := exec.Command(*c.Waifu2xCaffe, args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 		//cmd.Dir = wd
 		cmd.SysProcAttr = sysProcAttr
 		err = cmd.Run()
@@ -368,6 +370,8 @@ func w2xcppProcess(
 		// Uncertain if CUDA and OpenCL run into the same problem, but try anyway
 		time.Sleep(5 * time.Second)
 		cmd := exec.Command(c.Waifu2xCPP, args...)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
 		cmd.SysProcAttr = sysProcAttr
 		err = cmd.Run()
 		if err != nil {
