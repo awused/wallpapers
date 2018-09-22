@@ -30,6 +30,14 @@ var closeChan = make(chan struct{})
 
 var ErrStopped = errors.New("Processing stopped with StopGPU")
 
+// Options to write a PNG as fast as possible without decent compression
+// When used on tmpfs in memory this is naturally the right choice.
+var fastPNGArgs = []string{
+	"-define", "png:compression-level=0",
+	"-define", "png:compression-strategy=4",
+	"-define", "png:compression-filter=2",
+}
+
 // Stops doing any additional processing on the GPU
 // Will wait for any ongoing actions to finish
 func StopGPU() {
@@ -209,7 +217,8 @@ func doCropOrPad(
 	newimg.Width -= co.Left + co.Right
 	newimg.Height -= co.Top + co.Bottom
 
-	croppedFile := filepath.Join(tdir, hashPath(inFile)+cropOrPadStr+"-cropped.bmp")
+	croppedFile := filepath.Join(
+		tdir, hashPath(inFile)+cropOrPadStr+"-cropped.png")
 
 	if fileExists(croppedFile) {
 		return croppedFile, img, nil
@@ -236,6 +245,8 @@ func doCropOrPad(
 		// that they want to crop this way
 		"-flatten",
 		croppedFile)
+
+	args = append(args, fastPNGArgs...)
 
 	cmd := exec.Command(c.ImageMagick, args...)
 	cmd.SysProcAttr = sysProcAttr
@@ -364,6 +375,7 @@ func w2xcppProcess(
 	}
 
 	cmd := exec.Command(c.Waifu2xCPP, args...)
+	fmt.Println(args)
 	cmd.SysProcAttr = sysProcAttr
 	err := cmd.Run()
 	if err != nil {
@@ -413,9 +425,13 @@ func getScaledIntermediateFile(
 		cropOrPadStr = po.ImageProps.cropOrPadString()
 	}
 
+	// Using BMP here is faster but clobbers but results in errors when upscaling
+	// 16-bit PNGs. Rather than detect those instances and convert them to 8-bit
+	// images, just allow waifu2x to generate a 16-bit output. Waifu2x does not
+	// use expensive png compression methods.
 	f := filepath.Join(tdir, hashPath(po.Input)) + "-" +
 		strconv.Itoa(scale) + "-" + cropOrPadStr +
-		"-intermediate.bmp"
+		"-intermediate.png"
 
 	return f, nil
 }
@@ -506,11 +522,10 @@ func getImageConfig(inFile AbsolutePath) (string, *image.Config, error) {
 		if err != nil {
 			args := append(
 				getBaseConvertArgs(c),
-				// Use the fastest compression settings
-				"-define", "png:compression-level=0",
-				// Huffman over zlib for anime
-				"-define", "png:compression-strategy=2",
 				inFile, convertedFile)
+
+			args = append(args, fastPNGArgs...)
+
 			cmd := exec.Command(c.ImageMagick, args...)
 			cmd.SysProcAttr = sysProcAttr
 			err = cmd.Run()
