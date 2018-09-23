@@ -123,7 +123,6 @@ func previewWallpaperUsingFakeCache(
 	redirectCache()
 
 	outFiles := make([]string, len(monitors))
-	scaledFiles := make([]string, len(monitors))
 
 MonitorLoop:
 	for i, m := range monitors {
@@ -155,19 +154,6 @@ MonitorLoop:
 			Flatten:    true,
 			CropOrPad:  true,
 			ImageProps: imageProps}
-
-		scaledFiles[i], err = lib.GetScaledIntermediateFile(po)
-		checkErr(err)
-
-		for _, sf := range scaledFiles[:i] {
-			if scaledFiles[i] == sf {
-				po.Input = sf
-				// Scaled files have already been denoised and cropped/padded
-				po.Denoise = false
-				po.CropOrPad = false
-				break
-			}
-		}
 
 		err = lib.ProcessImage(po)
 		checkErr(err)

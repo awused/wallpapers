@@ -212,7 +212,7 @@ func doCropOrPad(
 
 	// This copies the color.Model interface pointer but we never modify that so
 	// it's safe enough
-	// Not copying it would also be fine
+	// Not copying it would have been less error prone
 	newimg := *img
 	newimg.Width -= co.Left + co.Right
 	newimg.Height -= co.Top + co.Bottom
@@ -221,7 +221,7 @@ func doCropOrPad(
 		tdir, hashPath(inFile)+cropOrPadStr+"-cropped.png")
 
 	if fileExists(croppedFile) {
-		return croppedFile, img, nil
+		return croppedFile, &newimg, nil
 	}
 
 	bg := co.Background
@@ -243,10 +243,10 @@ func doCropOrPad(
 		// This will destroy any transparency, as will the transition to bmp
 		// Users will need to set another BG colour if they have transparent images
 		// that they want to crop this way
-		"-flatten",
-		croppedFile)
+		"-flatten")
 
 	args = append(args, fastPNGArgs...)
+	args = append(args, croppedFile)
 
 	cmd := exec.Command(c.ImageMagick, args...)
 	cmd.SysProcAttr = sysProcAttr
