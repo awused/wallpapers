@@ -171,7 +171,7 @@ func promptUntilDone(wallpaper string) {
 		"bg ":            setString(&imageProps.Background),
 	}
 
-	monitors, err := lib.GetMonitors()
+	monitors, err := lib.GetMonitors(false, false)
 	checkErr(err)
 
 	if len(monitors) == 0 {

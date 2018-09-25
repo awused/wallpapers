@@ -165,45 +165,6 @@ func SetMonitorWallpapers(monitors []*Monitor) error {
 	return errors.New("Not yet implemented")
 }
 
-// TODO -- refactor this so it's called inside GetMonitors and filters them
-func CheckIfLocked() (bool, error) {
-
-	// per-user dbus detected
-	if true {
-		setDBUSAddress()
-	}
-
-	// TODO -- refactor this properly.
-	// Check for i3lock first
-	if true {
-		out, err := runBash(`
-			pgrep -u $USER i3lock || test $? = 1
-		`)
-
-		if err != nil {
-			return false, nil
-		}
-
-		if strings.TrimSpace(out) != "" {
-			return true, nil
-		}
-	}
-
-	// Again assuming GNOME
-	if true {
-		out, err := runBash(`
-	gdbus call -e -d org.gnome.ScreenSaver -o /org/gnome/ScreenSaver -m org.gnome.ScreenSaver.GetActive | sed -e 's/[^a-zA-Z]//g'
-	`)
-		// We do not care about errors here. Assume it's unlocked
-		if err == nil {
-			return false, nil
-		}
-		return strings.TrimSpace(out) == "true", nil
-	}
-
-	return false, nil
-}
-
 // No-op
 func AttachParentConsole() {}
 

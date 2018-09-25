@@ -5,6 +5,7 @@ package changewallpaperlib
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"syscall"
 	"unsafe"
@@ -65,7 +66,20 @@ var sysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 var modole32 = syscall.NewLazyDLL("ole32.dll")
 var coTaskMemFree = modole32.NewProc("CoTaskMemFree")
 
-func GetMonitors() ([]*Monitor, error) {
+func GetMonitors(unlocked bool, nofs bool) ([]*Monitor, error) {
+	if nofs {
+		log.Println("--no-fullscreen is not yet supported on Windows")
+	}
+
+	if unlocked {
+		locked, err := checkIfLocked()
+		if err != nil {
+			return nil, err
+		}
+		if locked {
+			return nil, nil
+		}
+	}
 	/*
 		Old legacy code using one large wallpaper tiled across all monitors.
 
@@ -265,7 +279,7 @@ func SetRegistryKeys() error {
 	return err
 }
 
-func CheckIfLocked() (bool, error) {
+func checkIfLocked() (bool, error) {
 	userLib := syscall.NewLazyDLL("user32.dll")
 	openInputDesktop := userLib.NewProc("OpenInputDesktop")
 	closeDesktop := userLib.NewProc("CloseDesktop")

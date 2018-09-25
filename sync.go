@@ -50,7 +50,7 @@ func syncAction(c *cli.Context) error {
 	conf, err := lib.GetConfig()
 	checkErr(err)
 
-	monitors, err := lib.GetMonitors()
+	monitors, err := lib.GetMonitors(false, false)
 	checkErr(err)
 
 	if len(monitors) == 0 {

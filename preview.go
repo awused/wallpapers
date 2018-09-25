@@ -87,7 +87,7 @@ func previewAction(c *cli.Context) error {
 		Right:      c.Int(right),
 		Background: c.String(background)}
 
-	monitors, err := lib.GetMonitors()
+	monitors, err := lib.GetMonitors(false, false)
 	checkErr(err)
 
 	if len(monitors) == 0 {

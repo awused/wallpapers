@@ -106,6 +106,45 @@ func listSessionIDs() ([]string, error) {
 	return nil, nil
 }
 
+// TODO -- refactor this so it's called inside GetMonitors and filters them
+func checkIfLocked(s *session) bool {
+
+	// per-user dbus detected
+	if true {
+		setDBUSAddress()
+	}
+
+	// TODO -- refactor this properly.
+	// Check for i3lock first
+	if true {
+		out, err := runBash(`
+			pgrep -u $USER i3lock || test $? = 1
+		`)
+
+		if err != nil {
+			return false
+		}
+
+		if strings.TrimSpace(out) != "" {
+			return true
+		}
+	}
+
+	// Again assuming GNOME
+	if true {
+		out, err := runBash(`
+	gdbus call -e -d org.gnome.ScreenSaver -o /org/gnome/ScreenSaver -m org.gnome.ScreenSaver.GetActive | sed -e 's/[^a-zA-Z]//g'
+	`)
+		// We do not care about errors here. Assume it's unlocked
+		if err == nil {
+			return false
+		}
+		return strings.TrimSpace(out) == "true"
+	}
+
+	return false
+}
+
 func listSessions() ([]session, error) {
 	ids, err := listSessionIDs()
 	if err != nil {
@@ -126,13 +165,37 @@ func listSessions() ([]session, error) {
 	return output, nil
 }
 
-func getXSessionData(s *session) ([]*Monitor, error) {
+// Ignore errors here, fail open
+func checkFullscreenX(X *xgbutil.XUtil) bool {
+	windows, _ := ewmh.ClientListGet(X)
+
+	for _, w := range windows {
+		states, _ := ewmh.WmStateGet(X, w)
+		for _, state := range states {
+			if state == "_NET_WM_STATE_FULLSCREEN" {
+				return true
+			}
+		}
+	}
+
+	return false
+}
+
+func getXSessionData(s *session, unlocked bool, nofs bool) ([]*Monitor, error) {
 	monitors := []*Monitor{}
 	X, err := xgbutil.NewConnDisplay(s.display)
 	if err != nil {
 		return nil, err
 	}
 	Xgb := X.Conn()
+
+	if unlocked && checkIfLocked(s) {
+		return nil, nil
+	}
+
+	if nofs && checkFullscreenX(X) {
+		return nil, nil
+	}
 
 	wm, err := ewmh.GetEwmhWM(X)
 	if err != nil {
@@ -172,10 +235,10 @@ func getXSessionData(s *session) ([]*Monitor, error) {
 	return monitors, nil
 }
 
-func monitorsForSession(s *session) ([]*Monitor, error) {
+func monitorsForSession(s *session, unlocked bool, nofs bool) ([]*Monitor, error) {
 	monitors := []*Monitor{}
 	if s.sType == xType {
-		ms, err := getXSessionData(s)
+		ms, err := getXSessionData(s, unlocked, nofs)
 		if err != nil {
 			return nil, err
 		}
@@ -186,7 +249,7 @@ func monitorsForSession(s *session) ([]*Monitor, error) {
 	return monitors, nil
 }
 
-func GetMonitors() ([]*Monitor, error) {
+func GetMonitors(unlocked bool, nofs bool) ([]*Monitor, error) {
 	// Stop polluting stdout
 	xgb.Logger.SetOutput(ioutil.Discard)
 	xgbutil.Logger.SetOutput(ioutil.Discard)
@@ -198,7 +261,7 @@ func GetMonitors() ([]*Monitor, error) {
 
 	monitors := []*Monitor{}
 	for _, s := range sessions {
-		ms, err := monitorsForSession(&s)
+		ms, err := monitorsForSession(&s, unlocked, nofs)
 		if err != nil {
 			return nil, err
 		}

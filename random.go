@@ -10,6 +10,7 @@ import (
 )
 
 const unlocked = "unlocked"
+const nofullscreen = "no-fullscreen"
 
 func randomCommand() cli.Command {
 	cmd := cli.Command{}
@@ -20,6 +21,11 @@ func randomCommand() cli.Command {
 		cli.BoolFlag{
 			Name:  unlocked + ", u",
 			Usage: "Checks to see if the screen is unlocked and aborts if it is",
+		},
+		cli.BoolFlag{
+			Name: nofullscreen + ", n",
+			Usage: "Checks to see if there are any full screen applications and " +
+				"aborts if there are",
 		},
 	}
 
@@ -32,20 +38,11 @@ func randomAction(c *cli.Context) error {
 	conf, err := lib.GetConfig()
 	checkErr(err)
 
-	if c.Bool(unlocked) {
-		locked, err := lib.CheckIfLocked()
-		checkErr(err)
-		if locked {
-			// Silently exit, this isn't an error
-			return nil
-		}
-	}
-
-	monitors, err := lib.GetMonitors()
+	monitors, err := lib.GetMonitors(c.Bool(unlocked), c.Bool(nofullscreen))
 	checkErr(err)
 
 	if len(monitors) == 0 {
-		if !c.Bool(unlocked) {
+		if !c.Bool(unlocked) && !c.Bool(nofullscreen) {
 			log.Println("No monitors detected.")
 		}
 		return nil
