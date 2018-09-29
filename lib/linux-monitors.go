@@ -90,8 +90,11 @@ func listSessionIDs() ([]string, error) {
 		}
 	}
 
+	// really should not fail
+	_ = os.Unsetenv("COLUMNS")
+
 	displays, err := runBash(
-		`w "$USER" | { grep ' :[0-9]*' || test $? = 1; } | awk '{print $2}'`)
+		`ps e -u "$USER" | sed -rn 's/.* DISPLAY=(:[0-9]+).*/\1/p' | uniq`)
 	if err != nil {
 		return nil, err
 	}
