@@ -154,6 +154,10 @@ func syncAction(c *cli.Context) error {
 	checkErr(err)
 	defer picker.Close()
 
+	for i, s := range originals {
+		originals[i] = filepath.ToSlash(s)
+	}
+
 	err = picker.AddAll(originals)
 	checkErr(err)
 

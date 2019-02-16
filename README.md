@@ -3,8 +3,7 @@ Wallpapers
 
 A tool for managing and shuffling a large number of wallpapers across multiple monitors, using waifu2x for upscaling. Runs on Windows 8 and up.
 
-<!-- TODO - And Linux, but with what limitations? -->
-Support will be added for linux based on whatever DE/WMs I end up using unless someone else wants to submit a pull request.
+Support will be added for linux based on whatever DE/WMs I end up using.
 
 # Requirements
 

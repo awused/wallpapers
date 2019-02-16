@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 
 	"github.com/awused/go-strpick/persistent"
 	lib "github.com/awused/wallpapers/lib"
@@ -55,6 +56,10 @@ func randomAction(c *cli.Context) error {
 	originals, err := lib.GetAllOriginals()
 	checkErr(err)
 
+	for i, s := range originals {
+		originals[i] = filepath.ToSlash(s)
+	}
+
 	err = picker.AddAll(originals)
 	checkErr(err)
 
@@ -71,6 +76,10 @@ func randomAction(c *cli.Context) error {
 
 	inputRelPaths, err := picker.TryUniqueN(len(monitors))
 	checkErr(err)
+
+	for i, s := range inputRelPaths {
+		inputRelPaths[i] = filepath.FromSlash(s)
+	}
 
 	for i, relPath := range inputRelPaths {
 		m := monitors[i]
