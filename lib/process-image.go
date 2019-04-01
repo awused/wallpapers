@@ -343,7 +343,7 @@ func w2xcppProcess(
 	if scale < 1 {
 		return fmt.Errorf("Cannot use waifu2x with a scale less than 1")
 	}
-	mode := "noise_scale"
+	mode := "noise-scale"
 	if scale == 1 {
 		mode = "noise"
 	} else if !denoise {
@@ -356,14 +356,18 @@ func w2xcppProcess(
 		"-m", mode,
 		"-i", inFile,
 		"-o", outFile,
-		"--force-OpenCL",
-		"--model_dir", c.Waifu2xCPPModels}
+		"--png-compression", "0", // Gotta go fast
+		"--model-dir", c.Waifu2xCPPModels}
 	if scale != 1 {
-		args = append(args, "--scale_ratio", strconv.Itoa(scale))
+		args = append(args, "--scale-ratio", strconv.Itoa(scale))
 	}
 
 	if denoise {
-		args = append(args, "--noise_level", "1")
+		args = append(args, "--noise-level", "1")
+	}
+
+	if c.ForceOpenCL {
+		args = append(args, "--force-OpenCL")
 	}
 
 	if c.CPUScale {

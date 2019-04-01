@@ -19,6 +19,7 @@ type Config struct {
 	LogFile             string
 	Waifu2xCaffe        *string
 	Waifu2xCPP          string
+	ForceOpenCL         bool
 	Waifu2xCPPModels    string
 	ImageMagick7        bool
 	ImageMagick         string
