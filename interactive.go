@@ -45,12 +45,14 @@ func interactiveAction(c *cli.Context) error {
 	w, err := filepath.Abs(c.Args().First())
 	checkErr(err)
 
-	sigs := make(chan os.Signal, 1)
+	// Large buffered channel so it doesn't block signals if it's busy
+	sigs := make(chan os.Signal, 100)
 	promptChan := make(chan struct{}, 1)
+	inputChan := make(chan string)
 	signal.Notify(sigs, syscall.SIGINT)
 
 	go func() {
-		promptUntilDone(w)
+		promptUntilDone(w, inputChan)
 		promptChan <- struct{}{}
 	}()
 
@@ -59,8 +61,8 @@ func interactiveAction(c *cli.Context) error {
 		case <-promptChan:
 			return nil
 		case <-sigs:
-			// We need to make sure we clean up, so ignore sigint
-			fmt.Println("Use exit to exit")
+			// We need to make sure we clean up, so consume sigint
+			inputChan <- "exit"
 		}
 	}
 }
@@ -152,7 +154,7 @@ func setString(toSet *string) func(string, string) {
 	}
 }
 
-func promptUntilDone(wallpaper string) {
+func promptUntilDone(wallpaper string, inputChan chan string) {
 	imageProps := lib.ImageProps{}
 	executors := map[string]func(string, string){
 		vertical + " ":   setDouble(&imageProps.Vertical),
@@ -171,6 +173,13 @@ func promptUntilDone(wallpaper string) {
 		"bg ":            setString(&imageProps.Background),
 	}
 
+	exit := prompt.OptionAddKeyBind(prompt.KeyBind{
+		Key: prompt.ControlC,
+		Fn: func(b *prompt.Buffer) {
+			inputChan <- "exit"
+		},
+	})
+
 	monitors, err := lib.GetMonitors(false, false)
 	checkErr(err)
 
@@ -184,7 +193,11 @@ func promptUntilDone(wallpaper string) {
 
 PromptLoop:
 	for {
-		in := strings.ToLower(prompt.Input("> ", completer))
+		go func() {
+			// prompt.Input is blocking, synchronous, and provides no way to abort it
+			inputChan <- strings.ToLower(prompt.Input("> ", completer, exit))
+		}()
+		in := <-inputChan
 		if in == "exit" {
 			return
 		}
