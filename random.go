@@ -52,6 +52,7 @@ func randomAction(c *cli.Context) error {
 	picker, err := persistent.NewPicker(conf.DatabaseDir)
 	checkErr(err)
 	defer picker.Close()
+	checkErr(picker.SetRandomlyDistributeNewStrings(true))
 
 	originals, err := lib.GetAllOriginals()
 	checkErr(err)
