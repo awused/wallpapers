@@ -178,7 +178,9 @@ func ProcessImage(po ProcessOptions) error {
 			default:
 			}
 
-			if c.Waifu2xCaffe != nil {
+			if c.Waifu2xNCNNVulkan != nil {
+				err = ncnnVulkanProcess(validInFile, scale, po, c)
+			} else if c.Waifu2xCaffe != nil {
 				err = caffeProcess(validInFile, tempFile, scale, po.Denoise, c)
 			} else {
 				err = w2xcppProcess(validInFile, tempFile, scale, po.Denoise, c)
@@ -414,6 +416,68 @@ func w2xcppProcess(
 	}
 
 	return err
+}
+
+func ncnnVulkanProcess(
+	inFile string, finalScale int, po ProcessOptions, c *Config) error {
+	// ncnnVulkan is a special case and the executable only scales by 2 for now.
+	// See https://github.com/nihui/waifu2x-ncnn-vulkan/issues/20
+	if finalScale < 1 {
+		return fmt.Errorf("Cannot use waifu2x with a scale less than 1")
+	}
+
+	currentScale := 1
+	currentFile := inFile
+	nextFile := ""
+	var err error
+
+	for currentScale < finalScale || currentScale == 1 {
+		scale := 2
+		if finalScale == 1 {
+			scale = 1
+		}
+
+		nextFile, err = getScaledIntermediateFile(po, currentScale*scale)
+		if err != nil {
+			return err
+		}
+
+		if !fileExists(nextFile) {
+			args := []string{
+				"-i", currentFile,
+				"-o", nextFile,
+				"-m", c.Waifu2xNCNNVulkanModels,
+				"-s", strconv.Itoa(scale),
+			}
+
+			// This otherwise defaults to "0" but that's generally better than -1.
+			if po.Denoise {
+				args = append(args, "-n", "1")
+			}
+
+			cmd := exec.Command(*c.Waifu2xNCNNVulkan, args...)
+			cmd.SysProcAttr = sysProcAttr
+			err := cmd.Run()
+			if err != nil {
+				// Uncertain if Vulkan runs into the same issue, but try again anyway.
+				time.Sleep(5 * time.Second)
+				args = append(args, "-v")
+				cmd := exec.Command(*c.Waifu2xNCNNVulkan, args...)
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
+				cmd.SysProcAttr = sysProcAttr
+				err = cmd.Run()
+				if err != nil {
+					log.Printf("Failed twice with settings: %v\n", args)
+				}
+			}
+		}
+
+		currentFile = nextFile
+		currentScale = currentScale * 2
+	}
+
+	return nil
 }
 
 func getScaledIntermediateFile(

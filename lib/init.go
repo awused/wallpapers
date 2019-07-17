@@ -13,22 +13,24 @@ import (
 )
 
 type Config struct {
-	DatabaseDir         string
-	TempDirectory       string
-	OutputDir           string
-	LogFile             string
-	Waifu2xCaffe        *string
-	Waifu2xCPP          string
-	ForceOpenCL         bool
-	Waifu2xCPPModels    string
-	ImageMagick7        bool
-	ImageMagick         string
-	OriginalsDirectory  string
-	CacheDirectory      string
-	ImageFileExtensions []string
-	MaxPNGWallpaperSize int64
-	CPUScale            bool
-	CPUThreads          *int
+	DatabaseDir             string
+	TempDirectory           string
+	OutputDir               string
+	LogFile                 string
+	Waifu2xCaffe            *string
+	Waifu2xNCNNVulkan       *string
+	Waifu2xNCNNVulkanModels string
+	Waifu2xCPP              string
+	ForceOpenCL             bool
+	Waifu2xCPPModels        string
+	ImageMagick7            bool
+	ImageMagick             string
+	OriginalsDirectory      string
+	CacheDirectory          string
+	ImageFileExtensions     []string
+	MaxPNGWallpaperSize     int64
+	CPUScale                bool
+	CPUThreads              *int
 }
 
 var props map[string]map[string]map[string]ImageProps
@@ -162,12 +164,16 @@ func (c *Config) validate() error {
 		}
 	}
 
-	if c.Waifu2xCaffe == nil && c.Waifu2xCPP == "" {
-		return fmt.Errorf("Config missing Waifu2xCaffe and Waifu2xCPP")
+	if c.Waifu2xCaffe == nil && c.Waifu2xCPP == "" && c.Waifu2xNCNNVulkan == nil {
+		return fmt.Errorf("Config missing any option for waifu2x")
 	}
 
 	if c.Waifu2xCaffe != nil && *c.Waifu2xCaffe == "" {
 		return fmt.Errorf("Config contains empty Waifu2xCaffe")
+	}
+
+	if c.Waifu2xNCNNVulkan != nil && *c.Waifu2xNCNNVulkan == "" {
+		return fmt.Errorf("Config contains empty Waifu2xNCNNVulkan")
 	}
 
 	if c.CPUThreads != nil && *c.CPUThreads <= 0 {

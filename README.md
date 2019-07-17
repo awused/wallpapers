@@ -9,8 +9,9 @@ Support will be added for linux based on whatever DE/WMs I end up using.
 
 * ImageMagick (6 or 7)
 * Waifu2x
-    * [waifu2x-caffe](https://github.com/lltcggie/waifu2x-caffe) is recommended on Windows with Nvidia GPUs. Untested on Linux.
-    * [DeadSix27/waifu2x-converter-cpp](https://github.com/DeadSix27/waifu2x-converter-cpp) otherwise.
+    * [waifu2x-ncnn-vulkan](https://github.com/nihui/waifu2x-ncnn-vulkan) is recommended. Use the cunet model.
+    * [waifu2x-caffe](https://github.com/lltcggie/waifu2x-caffe) works well on Windows with Nvidia GPUs and cudnn. Untested on Linux.
+    * [DeadSix27/waifu2x-converter-cpp](https://github.com/DeadSix27/waifu2x-converter-cpp) as a backup.It only supports the most basic model.
 * Linux only:
     * bash must be available
     * Feh is required whenever it is capable of setting wallpapers

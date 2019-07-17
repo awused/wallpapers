@@ -24,6 +24,16 @@ DatabaseDir = 'C:\path\to\wallpaper-db'
 # Directory to store temporary files, leave blank for the system default temp directory
 TempDirectory = 'C:\temp'
 
+# Where to find waifu2x-ncnn-vulkan.
+# On Windows this must be a full, absolute path (C:\path\to\waifu2x-ncnn-vulkan.exe).
+# If uncommented this takes precedence over both waifu2x-converter-cpp and waifu2x-caffe.
+Waifu2xNCNNVulkan = 'C:\path\to\waifu2x-ncnn-vulkan.exe'
+
+# The path to the chosen model for waifu2x-ncnn-vulkan.
+# The CUNET model is recommended for quality.
+# Speed is of minimal importance since all wallpapers are cached.
+Waifu2xNCNNVulkanModels = 'C:\path\to\waifu2x-ncnn-vulkan\models-cunet'
+
 # Where to find waifu2x-caffe-cui.exe on Windows
 # If uncommented this takes precedence over waifu2x-converter-cpp
 # Only set this if you're using an nvidia GPU on Windows, otherwise leave it empty
