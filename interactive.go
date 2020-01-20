@@ -49,7 +49,7 @@ func interactiveAction(c *cli.Context) error {
 	sigs := make(chan os.Signal, 100)
 	promptChan := make(chan struct{}, 1)
 	inputChan := make(chan string)
-	signal.Notify(sigs, syscall.SIGINT)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGHUP)
 
 	go func() {
 		promptUntilDone(w, inputChan)
