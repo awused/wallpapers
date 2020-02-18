@@ -150,12 +150,17 @@ func syncAction(c *cli.Context) error {
 	err = pruneCache(conf.CacheDirectory, monitors, allValidFiles)
 	checkErr(err)
 
+	imagePropertyKeys := lib.GetAllImagePropertyKeys()
+
 	picker, err := persistent.NewPicker(conf.DatabaseDir)
 	checkErr(err)
 	defer picker.Close()
 
 	for i, s := range originals {
 		originals[i] = filepath.ToSlash(s)
+		if imagePropertyKeys[originals[i]] {
+			delete(imagePropertyKeys, originals[i])
+		}
 	}
 
 	err = picker.AddAll(originals)
@@ -163,6 +168,11 @@ func syncAction(c *cli.Context) error {
 
 	err = picker.CleanDB()
 	checkErr(err)
+
+	for p := range imagePropertyKeys {
+		fmt.Printf("Unmatched image property: %s\n", p)
+	}
+
 	return nil
 }
 

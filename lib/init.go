@@ -71,6 +71,18 @@ func GetConfigImageProps(path RelativePath, m *Monitor) ImageProps {
 	return props[slashPath][m.aspectX][m.aspectY]
 }
 
+func GetAllImagePropertyKeys() map[string]bool {
+	if conf == nil || props == nil {
+		return nil
+	}
+
+	keys := make(map[string]bool)
+	for k := range props {
+		keys[k] = true
+	}
+	return keys
+}
+
 func aspectRatio(m *Monitor) (string, string) {
 	a, b := m.Width, m.Height
 
