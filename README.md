@@ -52,7 +52,11 @@ The random command will set one random wallpaper randomly on each monitor. It fa
 
 If one of the selected wallpapers hasn't been cached it will perform the same upscaling and caching as sync. If you're running this as part of a periodic task or cron job this can interrupt whatever you are doing by stressing your GPU, so it's recommended to run sync manually so you can control the timing.
 
-The --unlocked flag can be used to avoid changing wallpapers when the screen is locked, if you're running it using cron or a scheduled task.
+The --unlocked and --no-fullscreen flags can be used to avoid changing
+wallpapers when the screen is locked or you're busy, if you're running it
+using cron or a scheduled task. The --no-mpv flag requires that mpv be started
+with the [input-ipc-server](https://mpv.io/manual/stable/#json-ipc) flag
+with a unix socket and can be used to avoid interrupting playback.
 
 ### Preview
 

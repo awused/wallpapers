@@ -136,7 +136,7 @@ func checkIfLocked(s *session) bool {
 	// Again assuming GNOME
 	if true {
 		out, err := runBash(`
-	gdbus call -e -d org.gnome.ScreenSaver -o /org/gnome/ScreenSaver -m org.gnome.ScreenSaver.GetActive | sed -e 's/[^a-zA-Z]//g'
+	gdbus call -e -d org.gnome.ScreenSaver -o /org/gnome/ScreenSaver -m org.gnome.ScreenSaver.GetActive 2>/dev/null | sed -e 's/[^a-zA-Z]//g'
 	`)
 		// We do not care about errors here. Assume it's unlocked
 		if err == nil {

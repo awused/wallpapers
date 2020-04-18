@@ -1,8 +1,10 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"path/filepath"
 
 	"github.com/awused/go-strpick/persistent"
@@ -12,6 +14,7 @@ import (
 
 const unlocked = "unlocked"
 const nofullscreen = "no-fullscreen"
+const nompv = "no-mpv"
 
 func randomCommand() cli.Command {
 	cmd := cli.Command{}
@@ -28,6 +31,13 @@ func randomCommand() cli.Command {
 			Usage: "Checks to see if there are any full screen applications and " +
 				"aborts if there are",
 		},
+		cli.StringFlag{
+			Name: nompv,
+			Usage: "Checks to see if an instance of MPV is running unpaused on " +
+				"the given input-ipc-server and aborts if one is found. Only works " +
+				"with the last MPV instance started on that ipc-server",
+			Value: "",
+		},
 	}
 
 	cmd.Action = randomAction
@@ -36,6 +46,11 @@ func randomCommand() cli.Command {
 }
 
 func randomAction(c *cli.Context) error {
+	if checkMpv(c.String(nompv)) {
+		fmt.Println("dead")
+		return nil
+	}
+
 	conf, err := lib.GetConfig()
 	checkErr(err)
 
@@ -115,4 +130,39 @@ func randomAction(c *cli.Context) error {
 	err = lib.SetMonitorWallpapers(monitors)
 	checkErr(err)
 	return nil
+}
+
+type statusResponse struct {
+	Data bool `json:"data"`
+}
+
+func checkMpv(socket string) bool {
+	if socket == "" {
+		return false
+	}
+
+	c, err := net.Dial("unix", socket)
+	if err != nil {
+		return false
+	}
+	defer c.Close()
+
+	_, err = c.Write([]byte("{ \"command\": [\"get_property\", \"pause\"] }\n"))
+	if err != nil {
+		return false
+	}
+
+	out := make([]byte, 128)
+	n, err := c.Read(out)
+	if n == 0 || err != nil {
+		return false
+	}
+
+	resp := statusResponse{}
+	err = json.Unmarshal(out[:n], &resp)
+	if err != nil {
+		return false
+	}
+
+	return !resp.Data
 }
