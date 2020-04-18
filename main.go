@@ -5,7 +5,7 @@ import (
 	"os"
 
 	lib "github.com/awused/wallpapers/lib"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
 func main() {
@@ -14,7 +14,7 @@ func main() {
 
 	app := cli.NewApp()
 	app.Usage = "Program for managing wallpapers for multiple monitors"
-	app.Commands = []cli.Command{
+	app.Commands = []*cli.Command{
 		previewCommand(),
 		syncCommand(),
 		randomCommand(),

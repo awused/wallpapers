@@ -8,7 +8,7 @@ import (
 	"time"
 
 	lib "github.com/awused/wallpapers/lib"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
 const horizontal = "horizontal"
@@ -19,49 +19,56 @@ const left = "left"
 const right = "right"
 const background = "background"
 
-func previewCommand() cli.Command {
-	cmd := cli.Command{}
+func previewCommand() *cli.Command {
+	cmd := &cli.Command{}
 	cmd.Name = "preview"
 	cmd.Usage = "Preview a single wallpaper on every monitor"
 	cmd.ArgsUsage = "FILE"
 	cmd.Before = beforeFunc
 	cmd.Flags = []cli.Flag{
-		cli.Float64Flag{
-			Name:  vertical + ", y",
-			Value: 0,
+		&cli.Float64Flag{
+			Name:    vertical,
+			Aliases: []string{"v"},
+			Value:   0,
 			Usage: "Vertical offset, as a percentage of the file's height." +
 				"Positive values move the viewport upwards",
 		},
-		cli.Float64Flag{
-			Name:  horizontal + ", x",
-			Value: 0,
+		&cli.Float64Flag{
+			Name:    horizontal,
+			Aliases: []string{"x"},
+			Value:   0,
 			Usage: "Horizontal offset, as a percentage of the file's width." +
 				"Positive values move the viewport right",
 		},
-		cli.IntFlag{
-			Name:  top + ", t",
-			Value: 0,
-			Usage: "Pixels to crop off the top, negative values pad",
+		&cli.IntFlag{
+			Name:    top,
+			Aliases: []string{"t"},
+			Value:   0,
+			Usage:   "Pixels to crop off the top, negative values pad",
 		},
-		cli.IntFlag{
-			Name:  bottom + ", b",
-			Value: 0,
-			Usage: "Pixels to crop off the bottom, negative values pad",
+		&cli.IntFlag{
+			Name:    bottom,
+			Aliases: []string{"b"},
+			Value:   0,
+			Usage:   "Pixels to crop off the bottom, negative values pad",
 		},
-		cli.IntFlag{
-			Name:  left + ", l",
-			Value: 0,
-			Usage: "Pixels to crop off the left side, negative values pad",
+		&cli.IntFlag{
+			Name:    left,
+			Aliases: []string{"l"},
+			Value:   0,
+			Usage:   "Pixels to crop off the left side, negative values pad",
 		},
-		cli.IntFlag{
-			Name:  right + ", r",
-			Value: 0,
-			Usage: "Pixels to crop off the right side, negative values pad",
+		&cli.IntFlag{
+			Name:    right,
+			Aliases: []string{"r"},
+			Value:   0,
+			Usage:   "Pixels to crop off the right side, negative values pad",
 		},
-		cli.StringFlag{
-			Name:  background + ", bg",
-			Value: "black",
-			Usage: "Background colour to use when padding",
+		&cli.StringFlag{
+			Name:    background,
+			Aliases: []string{"bg"},
+			Value:   "black",
+			Usage:   "Background colour to use when padding",
 		},
 	}
 

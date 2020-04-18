@@ -13,23 +13,24 @@ import (
 
 	"github.com/awused/go-strpick/persistent"
 	lib "github.com/awused/wallpapers/lib"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
 const limit = "limit"
 
-func syncCommand() cli.Command {
-	cmd := cli.Command{}
+func syncCommand() *cli.Command {
+	cmd := &cli.Command{}
 	cmd.Name = "sync"
 	cmd.Usage = "Prepopulate the cache of scaled files and remove stale files"
 	cmd.Description = "Does not remove cached wallpapers for disconnected " +
 		"monitors, remove those manually"
 	cmd.Before = beforeFunc
 	cmd.Flags = []cli.Flag{
-		cli.Int64Flag{
-			Name:  limit + ", l",
-			Value: math.MaxInt64,
-			Usage: "The maximum number of original wallpapers to scale.",
+		&cli.Int64Flag{
+			Name:    limit,
+			Aliases: []string{"l"},
+			Value:   math.MaxInt64,
+			Usage:   "The maximum number of original wallpapers to scale.",
 		},
 	}
 

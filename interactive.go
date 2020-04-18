@@ -13,7 +13,7 @@ import (
 
 	lib "github.com/awused/wallpapers/lib"
 	prompt "github.com/c-bata/go-prompt"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
 /*
@@ -24,8 +24,8 @@ v3: AppendToConfig
 v3: MoveToOriginalsFolder (do not overwrite anything)
 */
 
-func interactiveCommand() cli.Command {
-	cmd := cli.Command{}
+func interactiveCommand() *cli.Command {
+	cmd := &cli.Command{}
 	cmd.Name = "interactive"
 	cmd.Usage = "Interactively preview a single image on every monitor to " +
 		"quickly iterate on your settings."

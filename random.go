@@ -9,29 +9,31 @@ import (
 
 	"github.com/awused/go-strpick/persistent"
 	lib "github.com/awused/wallpapers/lib"
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
 const unlocked = "unlocked"
 const nofullscreen = "no-fullscreen"
 const nompv = "no-mpv"
 
-func randomCommand() cli.Command {
-	cmd := cli.Command{}
+func randomCommand() *cli.Command {
+	cmd := &cli.Command{}
 	cmd.Name = "random"
 	cmd.Usage = "Randomly select a wallpaper for each monitor"
 	cmd.Before = beforeFunc
 	cmd.Flags = []cli.Flag{
-		cli.BoolFlag{
-			Name:  unlocked + ", u",
-			Usage: "Checks to see if the screen is unlocked and aborts if it is",
+		&cli.BoolFlag{
+			Name:    unlocked,
+			Aliases: []string{"u"},
+			Usage:   "Checks to see if the screen is unlocked and aborts if it is",
 		},
-		cli.BoolFlag{
-			Name: nofullscreen + ", n",
+		&cli.BoolFlag{
+			Name:    nofullscreen,
+			Aliases: []string{"n"},
 			Usage: "Checks to see if there are any full screen applications and " +
 				"aborts if there are",
 		},
-		cli.StringFlag{
+		&cli.StringFlag{
 			Name: nompv,
 			Usage: "Checks to see if an instance of MPV is running unpaused on " +
 				"the given input-ipc-server and aborts if one is found. Only works " +
