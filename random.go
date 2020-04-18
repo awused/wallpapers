@@ -47,7 +47,6 @@ func randomCommand() cli.Command {
 
 func randomAction(c *cli.Context) error {
 	if checkMpv(c.String(nompv)) {
-		fmt.Println("dead")
 		return nil
 	}
 
