@@ -1,18 +1,21 @@
 module github.com/awused/wallpapers
 
-go 1.12
+go 1.16
 
 require (
-	github.com/BurntSushi/toml v0.3.1
+	github.com/BurntSushi/toml v0.4.1
 	github.com/BurntSushi/xgb v0.0.0-20210121224620-deaf085860bc
 	github.com/BurntSushi/xgbutil v0.0.0-20190907113008-ad855c713046
-	github.com/awused/awconf v0.0.0-20200418142553-bb26b1556e73
-	github.com/awused/go-strpick v0.0.0-20210228030029-d6e7938b6ee6
-	github.com/c-bata/go-prompt v0.2.5
-	github.com/go-ole/go-ole v1.2.5
-	github.com/mattn/go-colorable v0.1.8 // indirect
-	github.com/mattn/go-tty v0.0.3 // indirect
+	github.com/awused/aw-upscale v0.0.0-20211026014707-8c8adbcb47f8
+	github.com/awused/awconf v0.0.0-20211025224411-58798c73d17a
+	github.com/awused/go-strpick v0.0.0-20211025233205-f7d27a675a9c
+	github.com/c-bata/go-prompt v0.2.6
+	github.com/cpuguy83/go-md2man/v2 v2.0.1 // indirect
+	github.com/go-ole/go-ole v1.2.6
+	github.com/golang/snappy v0.0.4 // indirect
+	github.com/mattn/go-colorable v0.1.11 // indirect
+	github.com/mattn/go-runewidth v0.0.13 // indirect
 	github.com/urfave/cli/v2 v2.3.0
-	golang.org/x/image v0.0.0-20210220032944-ac19c3e999fb
-	golang.org/x/sys v0.0.0-20210228012217-479acdf4ea46
+	golang.org/x/image v0.0.0-20210628002857-a66eb6448b8d
+	golang.org/x/sys v0.0.0-20211025201205-69cdffdb9359
 )

@@ -10,21 +10,18 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"log"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"sync"
-	"time"
 
+	upscale "github.com/awused/aw-upscale"
 	"golang.org/x/image/bmp"
 	//"strings"
-	"syscall"
 )
 
-var gpuLock sync.Mutex
+var upscaleSem chan struct{}
 
 var closeChan = make(chan struct{})
 
@@ -168,24 +165,17 @@ func ProcessImage(po ProcessOptions) error {
 		} // Should not be possible
 
 		if !fileExists(tempFile) {
-			// Lock the "GPU" even if we're CPU scaling.
-			// You're not going to do more than one model at a time on any CPU.
-			gpuLock.Lock()
 			select {
+			case upscaleSem <- struct{}{}:
 			case <-closeChan:
-				gpuLock.Unlock()
 				return ErrStopped
-			default:
 			}
 
-			if c.Waifu2xNCNNVulkan != nil {
-				err = ncnnVulkanProcess(validInFile, scale, po, c)
-			} else if c.Waifu2xCaffe != nil {
-				err = caffeProcess(validInFile, tempFile, scale, po.Denoise, c)
-			} else {
-				err = w2xcppProcess(validInFile, tempFile, scale, po.Denoise, c)
-			}
-			gpuLock.Unlock()
+			upscaler := upscale.New(c.AlternateUpscaler).SetDenoise(po.Denoise).SetScale(scale)
+
+			upscaler.Process(validInFile, tempFile)
+
+			<-upscaleSem
 		}
 
 		if err != nil {
@@ -260,226 +250,6 @@ func doCropOrPad(
 	return croppedFile, &newimg, nil
 }
 
-// The two models to try from waifu2x caffe, the first one is much faster
-// but can easily run out of memory
-const model = `models/upconv_7_anime_style_art_rgb`
-const backupModel = `models/anime_style_art_rgb`
-
-func caffeProcess(
-	inFile, outFile AbsolutePath, scale int, denoise bool, c *Config) error {
-	err := caffeProcessModel(inFile, outFile, scale, denoise, c, model)
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		if status, ok := exitErr.Sys().(syscall.WaitStatus); ok {
-
-			// Probably Windows specific, but anyone running waifu2x-caffe on Linux
-			// can figure this out themselves.
-			if status.ExitStatus() == 3221225477 {
-				log.Printf(
-					"Access violation when running waifu2x on file [%s], "+
-						"retrying with backup model\n", inFile)
-				err = caffeProcessModel(
-					inFile, outFile, scale, denoise, c, backupModel)
-			}
-		}
-	}
-
-	return err
-}
-
-func caffeProcessModel(
-	inFile, outFile AbsolutePath,
-	scale int,
-	denoise bool,
-	c *Config,
-	modelPath string) error {
-
-	if scale < 1 {
-		return fmt.Errorf("Cannot use waifu2x with a scale less than 1")
-	}
-	// Not necessary anymore, keep commented to remind me if something breaks
-	//wd := filepath.Dir(w2x)
-	mode := "noise_scale"
-	if scale == 1 {
-		mode = "noise"
-	} else if !denoise {
-		mode = "scale"
-	}
-
-	args := []string{
-		"-m", mode, "-i", inFile, "-o", outFile, "--model_dir", modelPath}
-	if scale != 1 {
-		args = append(args, "-s", strconv.Itoa(scale))
-	}
-
-	if denoise {
-		args = append(args, "-n", "1")
-	}
-
-	if c.CPUScale {
-		args = append(args, "-p", "cpu")
-	}
-
-	cmd := exec.Command(*c.Waifu2xCaffe, args...)
-	//cmd.Dir = wd
-	cmd.SysProcAttr = sysProcAttr
-	err := cmd.Run()
-	if err != nil {
-		// CUDA will occasionally fail to initialize if the GPU is still busy after
-		// the last call. Retry after a short delay.
-		time.Sleep(5 * time.Second)
-		cmd := exec.Command(*c.Waifu2xCaffe, args...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		//cmd.Dir = wd
-		cmd.SysProcAttr = sysProcAttr
-		err = cmd.Run()
-		if err != nil {
-			log.Printf("Failed twice with settings: %v\n", args)
-		}
-	}
-	return err
-}
-
-func w2xcppProcess(
-	inFile, outFile AbsolutePath, scale int, denoise bool, c *Config) error {
-	if scale < 1 {
-		return fmt.Errorf("Cannot use waifu2x with a scale less than 1")
-	}
-	mode := "noise-scale"
-	if scale == 1 {
-		mode = "noise"
-	} else if !denoise {
-		mode = "scale"
-	}
-
-	// Force OpenCL to avoid CUDA, which is currently (2018-08)
-	// broken in waifu2x-converter-cpp
-	args := []string{
-		"-m", mode,
-		"-i", inFile,
-		"-o", outFile,
-		"--png-compression", "0", // Gotta go fast
-		"--model-dir", c.Waifu2xCPPModels}
-	if scale != 1 {
-		args = append(args, "--scale-ratio", strconv.Itoa(scale))
-	}
-
-	if denoise {
-		args = append(args, "--noise-level", "1")
-	}
-
-	if c.ForceOpenCL {
-		args = append(args, "--force-OpenCL")
-	}
-
-	if c.CPUScale {
-		args = append(args, "--disable-gpu")
-
-		if c.CPUThreads != nil {
-			args = append(args, "-j", strconv.Itoa(*c.CPUThreads))
-		}
-	}
-
-	cmd := exec.Command(c.Waifu2xCPP, args...)
-	cmd.SysProcAttr = sysProcAttr
-	err := cmd.Run()
-	if err != nil {
-		// Uncertain if CUDA and OpenCL run into the same problem, but try anyway
-		time.Sleep(5 * time.Second)
-		cmd := exec.Command(c.Waifu2xCPP, args...)
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		cmd.SysProcAttr = sysProcAttr
-		err = cmd.Run()
-		if err != nil {
-			log.Printf("Failed twice with settings: %v\n", args)
-		}
-	}
-
-	if err == nil {
-		// Workaround for https://github.com/DeadSix27/waifu2x-converter-cpp/issues/49 on Windows
-		// This is fixed by that PR, but no new release has been produced in ten
-		// months. I don't want to require users to build it themselves, so detect
-		// and work around the bug.
-
-		if _, err := os.Stat(outFile); err != nil {
-			if !os.IsNotExist(err) {
-				return err
-			}
-
-			if _, err := os.Stat(outFile + ".png"); err != nil {
-				return err
-			}
-
-			err = os.Rename(outFile+".png", outFile)
-		}
-	}
-
-	return err
-}
-
-func ncnnVulkanProcess(
-	inFile string, finalScale int, po ProcessOptions, c *Config) error {
-	// ncnnVulkan is a special case and the executable only scales by 2 for now.
-	// See https://github.com/nihui/waifu2x-ncnn-vulkan/issues/20
-	if finalScale < 1 {
-		return fmt.Errorf("Cannot use waifu2x with a scale less than 1")
-	}
-
-	currentScale := 1
-	currentFile := inFile
-	nextFile := ""
-	var err error
-
-	for currentScale < finalScale || currentScale == 1 {
-		scale := 2
-		if finalScale == 1 {
-			scale = 1
-		}
-
-		nextFile, err = getScaledIntermediateFile(po, currentScale*scale)
-		if err != nil {
-			return err
-		}
-
-		if !fileExists(nextFile) {
-			args := []string{
-				"-i", currentFile,
-				"-o", nextFile,
-				"-m", c.Waifu2xNCNNVulkanModels,
-				"-s", strconv.Itoa(scale),
-			}
-
-			// This otherwise defaults to "0" but that's generally better than -1.
-			if po.Denoise {
-				args = append(args, "-n", "1")
-			}
-
-			cmd := exec.Command(*c.Waifu2xNCNNVulkan, args...)
-			cmd.SysProcAttr = sysProcAttr
-			err := cmd.Run()
-			if err != nil {
-				// Uncertain if Vulkan runs into the same issue, but try again anyway.
-				time.Sleep(5 * time.Second)
-				args = append(args, "-v")
-				cmd := exec.Command(*c.Waifu2xNCNNVulkan, args...)
-				cmd.Stdout = os.Stdout
-				cmd.Stderr = os.Stderr
-				cmd.SysProcAttr = sysProcAttr
-				err = cmd.Run()
-				if err != nil {
-					log.Printf("Failed twice with settings: %v\n", args)
-				}
-			}
-		}
-
-		currentFile = nextFile
-		currentScale = currentScale * 2
-	}
-
-	return nil
-}
-
 func getScaledIntermediateFile(
 	po ProcessOptions, scale int) (AbsolutePath, error) {
 	tdir, err := TempDir()
@@ -492,9 +262,9 @@ func getScaledIntermediateFile(
 		cropOrPadStr = po.ImageProps.cropOrPadString()
 	}
 
-	// Using BMP here is faster but clobbers but results in errors when upscaling
-	// 16-bit PNGs. Rather than detect those instances and convert them to 8-bit
-	// images, just allow waifu2x to generate a 16-bit output. Waifu2x does not
+	// Using BMP here is faster but results in errors when upscaling
+	// 16-bit PNGs. Rather than detecting those instances and converting them to 8-bit
+	// images, just allow waifu2x to generate 16-bit output. Waifu2x does not
 	// use expensive png compression methods.
 	f := filepath.Join(tdir, hashPath(po.Input)) + "-" +
 		strconv.Itoa(scale) + "-" + cropOrPadStr +

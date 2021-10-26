@@ -46,7 +46,7 @@ func syncAction(c *cli.Context) error {
 
 	sigs := make(chan os.Signal, 1)
 	waitChan := make(chan struct{}, 1)
-	signal.Notify(sigs, syscall.SIGINT)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	conf, err := lib.GetConfig()
 	checkErr(err)

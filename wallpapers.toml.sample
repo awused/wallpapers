@@ -17,48 +17,25 @@ CacheDirectory = 'C:\path\to\wallpaper-cache'
 
 # The directory used for the database of recently used wallpapers.
 # It's not safe to use this database from multiple processes at once.
-# It is safe for multiple processes or computers to use, with the same originals directory, it if they don't access it at the same time.
+# It is safe for multiple processes or computers to use, with the same originals directory,
+# if they don't access it at the same time.
 # This directory must be created manually.
 DatabaseDir = 'C:\path\to\wallpaper-db'
 
 # Directory to store temporary files, leave blank for the system default temp directory
 TempDirectory = 'C:\temp'
 
-# Where to find waifu2x-ncnn-vulkan.
-# On Windows this must be a full, absolute path (C:\path\to\waifu2x-ncnn-vulkan.exe).
-# If uncommented this takes precedence over both waifu2x-converter-cpp and waifu2x-caffe.
-Waifu2xNCNNVulkan = 'C:\path\to\waifu2x-ncnn-vulkan.exe'
+# Use a different upscaler instead of the default waifu2x-ncnn-vulkan implementation.
+# The upscaler needs to be compatible with https://github.com/awused/aw-upscale
+# AlternateUpscaler = ''
 
-# The path to the chosen model for waifu2x-ncnn-vulkan.
-# The CUNET model is recommended for quality.
-# Speed is of minimal importance since all wallpapers are cached.
-Waifu2xNCNNVulkanModels = 'C:\path\to\waifu2x-ncnn-vulkan\models-cunet'
-
-# Where to find waifu2x-caffe-cui.exe on Windows
-# If uncommented this takes precedence over waifu2x-converter-cpp
-# Only set this if you're using an nvidia GPU on Windows, otherwise leave it empty
-# Waifu2xCaffe = 'C:\path\to\waifu2x-caffe-cui.exe'
-
-# Where to find waifu2x-converter-cpp.
-# Does not need to be installed if waifu2x-caffe is used instead.
-# Only tested with https://github.com/DeadSix27/waifu2x-converter-cpp, other forks may or may not work.
-# It's recommended to use waifu2x-caffe on Windows if you have an nvidia GPU for better performance, but this should work on any system.
-Waifu2xCPP = 'C:\path\to\waifu2x-converter-cpp.exe'
-
-# Uncomment to force OpenCL with Waifu2xCPP if you can't get CUDA working
-# ForceOpenCL = true
-
-# Where to find waifu2x-converter-cpp's models_rgb directory
-# No trailing slash
-Waifu2xCPPModels = 'C:\path\to\waifu2x-converter-cpp\models_rgb'
-
-# Uncomment to do waifu2x scaling on the CPU.
-# Not recommended, even for background processing, unless you're very patient.
-# CPUScale = true
-
-# Uncomment to limit the number of threads for CPU scaling when using waifu2x-converter-cpp.
-# Waifu2x-caffe doesn't have an argument to limit its threads but it avoids using 100% CPU.
-# CPUThreads = 4
+# Control how many upscaling jobs can be dispatched at once.
+# Upscaling is primarily limited by GPU throughput and VRAM with the default waifu2x-ncnn-vulkan
+# configuration.
+# Each instance uses about 1.2GB of VRAM.
+# Using two threads will slightly increase throughput but greatly increase latency.
+# default 1; values higher than 2 are not advised without switching to a cheaper upscaler.
+UpscalingJobs = 1
 
 # Comment this out or set to false to use ImageMagick6
 ImageMagick7 = true
@@ -67,5 +44,5 @@ ImageMagick7 = true
 # ImageMagick = 'magick'
 
 # Supported file extensions. Unlikely to work if you change this
-ImageFileExtensions = ["bmp", "jpg", "jpeg", "png", "tif", "tiff"]
+ImageFileExtensions = ["bmp", "jpg", "jpeg", "png", "tif", "tiff" ]
 
