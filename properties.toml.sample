@@ -1,46 +1,54 @@
 # Image Manipulation Properties
-# Place this file in the root of your OriginalsDirectory
 # Control how individual images are manipulated before and after scaling on
 # your monitors
 
-# Top, Bottom, Left, Right
+# top, bottom, left, right
 ## How many pixels to cut from that side of the original image, negative values pad
 
-# Background
-## When padding, which colour to pad with (defaults to black), can be anything ImageMagick understands (https://www.imagemagick.org/script/color.php)
+# background
+## When padding, which colour to pad with (defaults to black).
+## Valid values are "white", "black", or an RRGGBB hex string ("a1b2c3").
 
-# Horizontal, Vertical
+# horizontal, vertical
 ## How much to shift the image Up/Down or Left/Right, as a decimal percentage.
 ## Use when you want to focus on something off center, commonly to prevent characters' heads from getting cut off.
-## Must contain a decimal, or config parsing will fail (thanks TOML)
 
-# The table format is ['path/to/wallpaper.png'.X.Y]
+# denoise
+## The level of denoising to use as a signed integer.
+## The default level is 1, which has minimal impact on wallpapers that have no noise.
+## waifu2x-vulkan-ncnn supports values from -1 to 3.
+
+# The table format is ['path/to/wallpaper.png'] or ['path/to/wallpaper.png'.X.Y]
 # X and Y are the coprime components of the aspect ratio of your monitor. 16:10 is 8.5, 21:9 is 7:3
 # Use forward slashes in paths, even on Windows
-# You can experiment using the preview command, see wallpapers preview -h for more information
+# You can experiment using the preview command, see wallpapers preview -h for more information.
 
 # Examples:
 
-# A tall wallpaper with characters whose heads are cut off at 
-# "${OriginalsDirectory}\path\to\tall_wallpaper.jpg" and both 16:10 and 16:9 monitors:
+# With a tall wallpaper at "path\to\tall_wallpaper.jpg" relative to the OriginalsDirectory and both a 16:10 and 16:9 monitor:
 # ['path/to/tall_wallpaper.jpg'.8.5]
-# Vertical = 5.0
+# vertical = 5.0
 # ['path/to/tall_wallpaper.jpg'.16.9]
-# Vertical = 6.5
+# vertical = 6.5
 
-# For a wide wallpaper where the left side has something you want to see:
+# With a tall wallpaper at "path\to\tall_wallpaper.jpg" relative to the OriginalsDirectory,
+# with a 5% vertical offset for all monitors except 9x16 vertical monitors:
+# ['path/to/tall_wallpaper.jpg']
+# vertical = 5.0
+# ['path/to/tall_wallpaper.jpg'.16.9]
+
+# For a wide wallpaper where the left side has something you want to see, and minimal denoising:
 # ['path/to/wide_wallpaper.jpg'.8.5]
-# Horizontal = -10.0
+# horizontal = -10.0
+# denoise = -1
 
-# Letterbox a tall wallpaper on ultrawide monitors with grey stripes
+# Letterbox a tall wallpaper on ultrawide monitors with grey stripes, and denoise it heavily
 # ['tall_wallpaper'.7.3]
-# Left = -1000
-# Right = -1000
-# Background = "grey"
+# left = -1000
+# right = -1000
+# background = "aaaaaa"
+# denoise = 3
 
-# Cut off the bottom 300 pixels of a wide wallpaper on 4:3 monitors
+# Cut off the bottom 300 pixels of a wide wallpaper on only 4:3 monitors with black stripes
 # ['tall_wallpaper'.4.3]
-# Bottom = 300
-
-# TODO -- Find a better way. I can do slightly better with toml but yaml would be cleaner
-
+# bottom = 300

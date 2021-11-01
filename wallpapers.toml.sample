@@ -1,33 +1,24 @@
 # Where original wallpapers are located
-OriginalsDirectory = 'C:\path\to\originals'
+originals_directory = 'C:\path\to\originals'
 
 # Directory to store the upscaled and cropped versions of each wallpaper for each monitor
 # This can get very large if you have high resolution monitors
-# This directory must be created manually.
-CacheDirectory = 'C:\path\to\wallpaper-cache'
-
-# Directory where stitched together wallpapers should be stored
-# Only used for incapable desktop environments, like gnome
-# This program may delete any wallpapers you manually create here
-# Defaults to $HOME/.wallpapers
-# OutputDir = ''
-
-# Uncomment to log errors to a file instead of stdout.
-# LogFile = 'C:\Logs\wallpapers.log'
+# This directory will be created if it doesn't exist, but parent directories won't be.
+cache_directory = 'C:\path\to\wallpaper-cache'
 
 # The directory used for the database of recently used wallpapers.
 # It's not safe to use this database from multiple processes at once.
 # It is safe for multiple processes or computers to use, with the same originals directory,
 # if they don't access it at the same time.
-# This directory must be created manually.
-DatabaseDir = 'C:\path\to\wallpaper-db'
+# This directory will be created if it doesn't exist, but parent directories won't be.
+database = 'C:\path\to\wallpaper-db'
 
 # Directory to store temporary files, leave blank for the system default temp directory
-TempDirectory = 'C:\temp'
+# temp_directory = ''
 
 # Use a different upscaler instead of the default waifu2x-ncnn-vulkan implementation.
 # The upscaler needs to be compatible with https://github.com/awused/aw-upscale
-# AlternateUpscaler = ''
+# alternate_upscaler = ''
 
 # Control how many upscaling jobs can be dispatched at once.
 # Upscaling is primarily limited by GPU throughput and VRAM with the default waifu2x-ncnn-vulkan
@@ -35,14 +26,4 @@ TempDirectory = 'C:\temp'
 # Each instance uses about 1.2GB of VRAM.
 # Using two threads will slightly increase throughput but greatly increase latency.
 # default 1; values higher than 2 are not advised without switching to a cheaper upscaler.
-UpscalingJobs = 1
-
-# Comment this out or set to false to use ImageMagick6
-ImageMagick7 = true
-
-# Change this if ImageMagick isn't on your PATH, for ImageMagick6 use the path to "convert"
-# ImageMagick = 'magick'
-
-# Supported file extensions. Unlikely to work if you change this
-ImageFileExtensions = ["bmp", "jpg", "jpeg", "png", "tif", "tiff" ]
-
+upscaling_jobs = 1

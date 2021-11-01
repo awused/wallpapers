@@ -1,0 +1,46 @@
+[package]
+name = "wallpapers"
+version = "0.1.0"
+edition = "2021"
+description = "Awused's personal image and manga viewer"
+readme = "README.md"
+license = "MIT"
+keywords = ["wallpapers", "waifu2x"]
+homepage = "https://github.com/awused/wallpapers"
+repository = "https://github.com/awused/wallpapers"
+links = "X11, Xinerama"
+
+
+[dependencies]
+awconf = { git = "https://github.com/awused/awconf" }
+aw-shuffle = { git = "https://github.com/awused/go-strpick", features = [ "rocks" ] }
+aw-upscale = { git = "https://github.com/awused/aw-upscale" }
+crossbeam-utils = "0.8.5"
+# dialoguer = { version = "0.9.0", default-features = false, features = [ "history" ] }
+image = "0.23.14"
+num_cpus = "1.13.0"
+once_cell = "1.8.0"
+rayon = "1.5"
+serde = { version = "1.0", default-features = false, features = [ "derive" ] }
+signal-hook = "0.3.9"
+structopt = "0.3"
+tempfile = "3.2.0"
+toml = "0.5.8"
+walkdir = "2.3.2"
+
+[target.'cfg(unix)'.dependencies]
+x11 = "2.19.1"
+
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "0.3.9", features = [ "std", "shobjidl_core" ] }
+widestring = "0.5.1"
+
+# [target.x86_64-pc-windows-gnu]
+# rustflags = ["-C", "target-feature=+crt-static", "-C", "link-args=-static-stdc++"]
+
+[features]
+windows-quiet = []
+
+# opt-levels below 2 are unbearably slow. This has minimal impact on incremental builds.
+[profile.dev.package."*"]
+opt-level = 2
