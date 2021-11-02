@@ -25,6 +25,7 @@ use crate::wallpaper::Wallpaper;
 pub(crate) mod closing;
 mod config;
 mod directories;
+mod interactive;
 pub(crate) mod monitors;
 pub(crate) mod processing;
 mod wallpaper;
@@ -94,7 +95,10 @@ enum Command {
         #[structopt(parse(from_os_str))]
         file: PathBuf,
     },
-    Interactive,
+    Interactive {
+        #[structopt(parse(from_os_str))]
+        file: PathBuf,
+    },
 }
 
 pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::from_args);
@@ -134,7 +138,9 @@ fn main() {
 
             preview(file)
         }
-        Command::Interactive => interactive(),
+        Command::Interactive { file } => {
+            interactive::run(file);
+        }
     }
 }
 
@@ -185,16 +191,19 @@ fn random() {
     }
 
     assert_eq!(wids.len(), grouped_monitors.len());
-    let combined: Vec<_> = wids.into_iter().zip(grouped_monitors.into_iter()).collect();
+    let combined: Vec<_> = wids
+        .iter()
+        .zip(grouped_monitors.iter().map(Vec::as_slice))
+        .collect();
 
 
     combined.par_iter().for_each(|(wid, monitors)| {
-        Wallpaper::new(wid, monitors, &tdir).process(true);
+        Wallpaper::new(*wid, *monitors, &tdir).process(true);
     });
 
 
     if !closing::closed() {
-        monitors::set_wallpapers(combined, false);
+        monitors::set_wallpapers(combined.as_slice(), false);
     }
 
     // We could close the shuffler earlier but this acts as a de-facto lock preventing other
@@ -299,7 +308,6 @@ fn sync(clean_monitors: bool) {
 fn preview(path: &Path) {
     let tdir = make_tdir();
 
-    // Just run process() on this thread all on this thread.
     let monitors = monitors::list();
     if monitors.is_empty() {
         println!("No monitors detected");
@@ -311,12 +319,8 @@ fn preview(path: &Path) {
     w.process(false);
 
     if !closing::closed() {
-        monitors::set_wallpapers(vec![(wid, monitors)], true);
+        monitors::set_wallpapers(&[(&wid, &monitors)], true);
     }
-}
-
-fn interactive() {
-    todo!()
 }
 
 fn make_tdir() -> TempDir {
