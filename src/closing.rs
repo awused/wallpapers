@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use once_cell::sync::Lazy;
-use signal_hook::consts::TERM_SIGNALS;
+use signal_hook::consts::{SIGHUP, TERM_SIGNALS};
 use signal_hook::flag;
 
 static CLOSED: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
@@ -21,5 +21,12 @@ pub fn init() {
         flag::register_conditional_default(*sig, CLOSED.clone()).unwrap();
 
         flag::register(*sig, CLOSED.clone()).unwrap();
+    }
+
+    #[cfg(unix)]
+    {
+        flag::register_conditional_default(SIGHUP, CLOSED.clone()).unwrap();
+
+        flag::register(SIGHUP, CLOSED.clone()).unwrap();
     }
 }
