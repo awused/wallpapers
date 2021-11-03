@@ -58,7 +58,7 @@ pub struct ImageProperties {
 
 impl Display for ImageProperties {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        [
+        static FIELDS: [&str; 7] = [
             "vertical",
             "horizontal",
             "top",
@@ -66,23 +66,22 @@ impl Display for ImageProperties {
             "left",
             "right",
             "denoise",
-        ]
-        .into_iter()
-        .zip(
-            [
-                &self.vertical.as_ref().map(ToString::to_string),
-                &self.horizontal.as_ref().map(ToString::to_string),
-                &self.top.as_ref().map(ToString::to_string),
-                &self.bottom.as_ref().map(ToString::to_string),
-                &self.left.as_ref().map(ToString::to_string),
-                &self.right.as_ref().map(ToString::to_string),
-                &self.denoise.as_ref().map(ToString::to_string),
-            ]
-            .into_iter(),
-        )
-        .filter_map(|(a, b)| b.as_ref().map(|b| (a, b)))
-        .map(|(a, b)| writeln!(f, "{} = {}", a, b))
-        .collect::<Result<Vec<_>, _>>()?;
+        ];
+        let values = [
+            &self.vertical.as_ref().map(ToString::to_string),
+            &self.horizontal.as_ref().map(ToString::to_string),
+            &self.top.as_ref().map(ToString::to_string),
+            &self.bottom.as_ref().map(ToString::to_string),
+            &self.left.as_ref().map(ToString::to_string),
+            &self.right.as_ref().map(ToString::to_string),
+            &self.denoise.as_ref().map(ToString::to_string),
+        ];
+        FIELDS
+            .iter()
+            .zip(values.into_iter())
+            .filter_map(|(a, b)| b.as_ref().map(|b| (a, b)))
+            .map(|(a, b)| writeln!(f, "{} = {}", a, b))
+            .collect::<Result<Vec<_>, _>>()?;
 
         if let Some(b) = self.background.as_ref() {
             writeln!(f, "background = {}", colour_to_string(*b))?;

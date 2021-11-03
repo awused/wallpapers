@@ -7,7 +7,7 @@ use winapi::shared::winerror::E_FAIL;
 use winapi::shared::wtypesbase::CLSCTX_LOCAL_SERVER;
 use winapi::um::combaseapi::{CoCreateInstance, CoTaskMemFree, CoUninitialize};
 use winapi::um::objbase::CoInitialize;
-use winapi::um::shobjidl_core::{CLSID_DesktopWallpaper, IDesktopWallpaper};
+use winapi::um::shobjidl_core::{CLSID_DesktopWallpaper, IDesktopWallpaper, DWPOS_CENTER};
 use winapi::Interface;
 
 use crate::directories::ids::WallpaperID;
@@ -16,22 +16,21 @@ use crate::directories::ids::WallpaperID;
 pub struct Monitor {
     pub width: u32,
     pub height: u32,
-    // pub left: i32,
-    // pub top: i32,
     pub path: U16CString,
 }
 
 // Just return an empty monitors list rather than panicking
-fn check(result: i32) -> Result<(), Vec<Monitor>> {
+fn check(result: i32) -> Result<(), io::Error> {
     if result == 0 {
         Ok(())
     } else {
+        let e = io::Error::from_raw_os_error(result);
         println!("{:?}", io::Error::from_raw_os_error(result));
-        Err(Vec::new())
+        Err(e)
     }
 }
 
-unsafe fn get_monitor(dtop: &IDesktopWallpaper, n: u32) -> Result<Option<Monitor>, Vec<Monitor>> {
+unsafe fn get_monitor(dtop: &IDesktopWallpaper, n: u32) -> Result<Option<Monitor>, io::Error> {
     let mut monitor_id: *mut u16 = ptr::null_mut();
     check(dtop.GetMonitorDevicePathAt(n, &mut monitor_id))?;
     assert!(!monitor_id.is_null());
@@ -58,8 +57,6 @@ unsafe fn get_monitor(dtop: &IDesktopWallpaper, n: u32) -> Result<Option<Monitor
     Ok(Some(Monitor {
         width: (rect.right - rect.left) as u32,
         height: (rect.bottom - rect.top) as u32,
-        // left: rect.left,
-        // top: rect.top,
         path,
     }))
 }
@@ -67,7 +64,7 @@ unsafe fn get_monitor(dtop: &IDesktopWallpaper, n: u32) -> Result<Option<Monitor
 
 // In error cases this can leak but we'll be closing the program anyway.
 pub fn list() -> Vec<Monitor> {
-    let monitors = (|| unsafe {
+    let monitors: Result<_, io::Error> = (|| unsafe {
         check(CoInitialize(ptr::null_mut()))?;
 
         let mut monitors = Vec::new();
@@ -93,23 +90,52 @@ pub fn list() -> Vec<Monitor> {
             }
         }
 
-
         dtop.Release();
         CoUninitialize();
         Ok(monitors)
     })();
 
     match monitors {
-        Ok(v) | Err(v) => v,
+        Ok(v) => v,
+        Err(_) => Vec::new(),
     }
 }
 
-pub fn set_wallpapers(wallpapers: Vec<(impl WallpaperID, Vec<Monitor>)>, temp: bool) {
-    let mut x: Vec<_> = wallpapers
+pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], _temp: bool) {
+    // TODO -- maybe set legacy registry keys. Likely useless but I want to be sure.
+
+    let wallmons: Vec<_> = wallpapers
         .iter()
         .map(move |(wid, ms)| ms.iter().map(move |m| (wid, m)))
         .flatten()
         .collect();
 
-    todo!()
+    let r: Result<_, io::Error> = (|| unsafe {
+        check(CoInitialize(ptr::null_mut()))?;
+
+        let mut desktop: *mut IDesktopWallpaper = ptr::null_mut();
+
+        check(CoCreateInstance(
+            &CLSID_DesktopWallpaper,
+            ptr::null_mut(),
+            CLSCTX_LOCAL_SERVER,
+            &IDesktopWallpaper::uuidof(),
+            &mut desktop as *mut *mut IDesktopWallpaper as *mut *mut c_void,
+        ))?;
+
+        let dtop = desktop.as_ref().unwrap();
+
+        check(dtop.SetPosition(DWPOS_CENTER))?;
+
+        for (wid, m) in wallmons {
+            let u16_path = U16CString::from_os_str(wid.cached_abs_path(m, &wid.get_props(m)))
+                .expect("Invalid wallpaper path containing null");
+            check(dtop.SetWallpaper(m.path.as_ptr(), u16_path.as_ptr()))?;
+        }
+
+        dtop.Release();
+        CoUninitialize();
+        Ok(())
+    })();
+    drop(r);
 }

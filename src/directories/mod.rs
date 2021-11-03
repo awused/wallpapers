@@ -1,8 +1,4 @@
-#[cfg(windows)]
-use std::ffi::OsString;
 use std::io::Error;
-#[cfg(windows)]
-use std::path::Component;
 
 use walkdir::{DirEntry, WalkDir};
 

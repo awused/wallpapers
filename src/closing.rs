@@ -2,7 +2,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use once_cell::sync::Lazy;
-use signal_hook::consts::{SIGHUP, TERM_SIGNALS};
+#[cfg(unix)]
+use signal_hook::consts::SIGHUP;
+use signal_hook::consts::TERM_SIGNALS;
 use signal_hook::flag;
 
 static CLOSED: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
