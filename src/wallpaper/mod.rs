@@ -6,10 +6,8 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use aw_upscale::Upscaler;
-use image::codecs::png::{CompressionType, FilterType};
+use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::imageops::overlay;
-use image::imageops::FilterType::Lanczos3;
-use image::png::PngEncoder;
 use image::{ColorType, DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageEncoder};
 use once_cell::sync::OnceCell;
 use tempfile::TempDir;
@@ -18,9 +16,9 @@ use crate::closing;
 use crate::config::{ImageProperties, CONFIG};
 use crate::directories::ids::WallpaperID;
 use crate::monitors::Monitor;
+use crate::processing::resample::resize_par_linear;
+use crate::processing::resample::FilterType::Lanczos3;
 use crate::processing::{UPSCALING, WORKER};
-
-mod processing;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct Res {
@@ -222,7 +220,14 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             r.h - inset_top - inset_bottom,
         );
 
-        overlay(&mut output, &sub_input, margin_left, margin_top);
+
+        // TODO -- simplify the above code now that it's possible.
+        overlay(
+            &mut output,
+            &sub_input,
+            margin_left as i64,
+            margin_top as i64,
+        );
 
         let f = File::create(output_file).expect("Couldn't create output file");
         let enc = PngEncoder::new_with_quality(f, CompressionType::Fast, FilterType::Sub);
@@ -300,26 +305,33 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
 
         let (m_w, m_h) = (uf.m.width, uf.m.height);
 
-        let ratio = f64::max(
-            m_w as f64 / img.width() as f64,
-            m_h as f64 / img.height() as f64,
-        );
+        let img = if img.width() != m_w && img.height() != m_h {
+            let ratio = f64::max(
+                m_w as f64 / img.width() as f64,
+                m_h as f64 / img.height() as f64,
+            );
 
-        let int_w = (img.width() as f64 * ratio).round() as u32;
-        let int_h = (img.height() as f64 * ratio).round() as u32;
+            let int_w = (img.width() as f64 * ratio).round() as u32;
+            let int_h = (img.height() as f64 * ratio).round() as u32;
 
-        let mut img = img.resize_exact(int_w, int_h, Lanczos3);
+            let img = img.into_rgba8();
+            let img = resize_par_linear(&img, int_w, int_h, Lanczos3);
 
-        let img = img.crop(
-            int_w.saturating_sub(m_w) / 2,
-            int_h.saturating_sub(m_h) / 2,
-            m_w,
-            m_h,
-        );
+            DynamicImage::ImageRgba8(img)
+        } else {
+            img
+        };
 
-        // TODO -- use this once a newer version of the image crate is released with my fix.
-        // let img = img.resize_to_fill(m_w, m_h, Lanczos3);
-
+        let img = if img.width() != m_w || img.width() != m_h {
+            img.crop_imm(
+                img.width().saturating_sub(m_w) / 2,
+                img.height().saturating_sub(m_h) / 2,
+                m_w,
+                m_h,
+            )
+        } else {
+            img
+        };
 
         let f = File::create(&uf.final_file).expect("Couldn't create output file");
         let enc = PngEncoder::new_with_quality(
@@ -471,13 +483,14 @@ fn translate_image(
         img.height().saturating_sub(inset_top + margin_top),
     );
 
+    // TODO -- simplify the above code
     let mut output = ImageBuffer::from_pixel(width, height, [0xff, 0xff, 0xff, 0xff].into());
 
     overlay(
         &mut output,
         &sub_img,
-        min(margin_left, width),
-        min(margin_top, height),
+        min(margin_left, width) as i64,
+        min(margin_top, height) as i64,
     );
 
     DynamicImage::ImageRgba8(output)

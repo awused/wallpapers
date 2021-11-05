@@ -7,6 +7,9 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use crate::closing;
 use crate::config::CONFIG;
 
+#[allow(unused)]
+pub mod resample;
+
 // Pre- and post- upscaling work shares the same CPU-bound pool
 pub static WORKER: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
