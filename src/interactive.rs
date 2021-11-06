@@ -130,7 +130,7 @@ pub async fn run(path: &Path) {
                     Some(bg)
                 }
             }
-            Command::Denoise(d) => props.denoise = NonZeroI32::new(d).map(|x| x.into()),
+            Command::Denoise(d) => props.denoise = if d != 1 { Some(d) } else { None },
             Command::Help => {
                 // TODO -- help
                 process = false;

@@ -203,6 +203,10 @@ impl WallpaperID for TempWallpaperID<'_> {
         if let Some(ip) = ip.as_ref() {
             p.push(ip.crop_pad_string());
             p.push("-");
+            if let Some(denoise) = ip.denoise {
+                p.push(denoise.to_string());
+                p.push("-")
+            }
         }
         p.push(scale.to_string());
         p.push(".png");
