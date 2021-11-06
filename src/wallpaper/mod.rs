@@ -95,7 +95,8 @@ struct UncachedFiles<'a> {
 pub struct Wallpaper<'a, T: WallpaperID> {
     pub id: &'a T,
     monitors: &'a [Monitor],
-    tdir: TempDir,
+    parent_tdir: &'a TempDir,
+    tdir: OnceCell<TempDir>,
     // This could save time and memory during interactive mode, but likely not worth too much.
     // original_image: OnceCell<Arc<DynamicImage>>,
     resolution: OnceCell<Res>,
@@ -103,14 +104,12 @@ pub struct Wallpaper<'a, T: WallpaperID> {
 }
 
 impl<'a, T: WallpaperID> Wallpaper<'a, T> {
-    pub fn new(id: &'a T, monitors: &'a [Monitor], parent_tdir: &TempDir) -> Self {
-        let mut builder = tempfile::Builder::new();
-        builder.prefix("wallpaper");
-        let tdir = builder.tempdir_in(parent_tdir.path()).unwrap();
+    pub fn new(id: &'a T, monitors: &'a [Monitor], parent_tdir: &'a TempDir) -> Self {
         Self {
             id,
             monitors,
-            tdir,
+            parent_tdir,
+            tdir: OnceCell::new(),
             resolution: OnceCell::new(),
             mtime: OnceCell::new(),
         }
@@ -379,7 +378,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                 let cropped = self
                     .id
                     .cropped_rel_path(&props)
-                    .map(|p| self.tdir.path().join(p));
+                    .map(|p| self.get_tdir().join(p));
                 let cropped = if let Some(cropped) = cropped {
                     if !dedupe.contains(&cropped) {
                         dedupe.insert(cropped.clone());
@@ -398,8 +397,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                 let scale = self.get_resolution().get_scale(&props, m);
 
                 let scaled = self
-                    .tdir
-                    .path()
+                    .get_tdir()
                     .join(self.id.upscaled_rel_path(scale, &props));
                 let scaled = if !dedupe.contains(&scaled) {
                     dedupe.insert(scaled.clone());
@@ -435,6 +433,16 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                 })
                 .into()
         })
+    }
+
+    fn get_tdir(&self) -> &Path {
+        self.tdir
+            .get_or_init(|| {
+                let mut builder = tempfile::Builder::new();
+                builder.prefix("wallpaper");
+                builder.tempdir_in(self.parent_tdir.path()).unwrap()
+            })
+            .path()
     }
 }
 
