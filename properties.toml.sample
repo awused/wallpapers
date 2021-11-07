@@ -1,4 +1,7 @@
 # Image Manipulation Properties
+#
+# This can be manually edited but it's best managed with interactive mode's "install" and "update" commands.
+#
 # Control how individual images are manipulated before and after scaling on
 # your monitors
 

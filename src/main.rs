@@ -1,6 +1,6 @@
 #![cfg_attr(feature = "windows-quiet", windows_subsystem = "windows")]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::fs::{remove_dir, remove_file};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -132,7 +132,7 @@ fn main() {
                     string_to_colour(s).unwrap_or_else(|| panic!("Couldn't parse colour {}", s))
                 }),
                 denoise: *denoise,
-                nested: HashMap::new(),
+                nested: BTreeMap::new(),
             };
             drop(props);
 
@@ -288,7 +288,20 @@ fn sync(clean_monitors: bool) {
             assert!(f.starts_with(&CONFIG.cache_directory));
 
             remove_file(&f).expect("Failed to delete file");
-            drop(remove_dir(f.parent().expect("Impossible")));
+
+            let mut removed = &*f;
+            // Remove any empty parent directories
+            while let Some(p) = removed.parent() {
+                if !p.starts_with(&CONFIG.cache_directory) || p == CONFIG.cache_directory {
+                    break;
+                }
+
+                if remove_dir(p).is_err() {
+                    break;
+                }
+
+                removed = p;
+            }
         });
 
     let mut props_copy = PROPERTIES.clone();

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::fs::{create_dir, read_to_string};
 use std::path::PathBuf;
@@ -6,7 +6,7 @@ use std::string::ToString;
 
 use image::Rgba;
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::OPTIONS;
 
@@ -32,28 +32,41 @@ const fn one() -> usize {
     1
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ImageProperties {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub vertical: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub horizontal: Option<f64>,
     #[serde(default, deserialize_with = "zero_is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub top: Option<i32>,
     #[serde(default, deserialize_with = "zero_is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub bottom: Option<i32>,
     #[serde(default, deserialize_with = "zero_is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub left: Option<i32>,
     #[serde(default, deserialize_with = "zero_is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub right: Option<i32>,
 
-    #[serde(default, deserialize_with = "deserialize_colour")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_colour",
+        serialize_with = "serialize_colour"
+    )]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub background: Option<Rgba<u8>>,
 
     #[serde(default, deserialize_with = "zero_is_none")]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub denoise: Option<i32>,
 
     // To facilitate deserializing
     #[serde(flatten)]
-    pub nested: HashMap<String, HashMap<String, ImageProperties>>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub nested: BTreeMap<String, BTreeMap<String, ImageProperties>>,
 }
 
 impl Display for ImageProperties {
@@ -102,7 +115,7 @@ impl Clone for ImageProperties {
             right: self.right,
             background: self.background,
             denoise: self.denoise,
-            nested: HashMap::new(),
+            nested: BTreeMap::new(),
         }
     }
 }
@@ -144,6 +157,17 @@ impl ImageProperties {
             + ","
             + &self.horizontal.unwrap_or_default().to_string()
     }
+
+    pub fn copy_from(&mut self, other: &Self) {
+        self.vertical = other.vertical;
+        self.horizontal = other.horizontal;
+        self.top = other.top;
+        self.bottom = other.bottom;
+        self.left = other.left;
+        self.right = other.right;
+        self.background = other.background;
+        self.denoise = other.denoise;
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -181,6 +205,14 @@ where
     Ok(Some(
         string_to_colour(&s).unwrap_or_else(|| panic!("Unable to parse colour {}", s)),
     ))
+}
+
+fn serialize_colour<S>(v: &Option<Rgba<u8>>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    // We skip serializing if the option is none anyway
+    serializer.serialize_str(&colour_to_string(*v.as_ref().unwrap()))
 }
 
 pub fn string_to_colour(s: &str) -> Option<Rgba<u8>> {
@@ -243,10 +275,10 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| {
 });
 
 
-pub static PROPERTIES: Lazy<HashMap<PathBuf, ImageProperties>> = Lazy::new(|| {
+pub fn load_properties() -> BTreeMap<PathBuf, ImageProperties> {
     let propfile = CONFIG.originals_directory.join(".properties.toml");
     if !propfile.is_file() {
-        return HashMap::new();
+        return BTreeMap::new();
     }
 
     // TOML files are UTF-8 by definition
@@ -254,6 +286,8 @@ pub static PROPERTIES: Lazy<HashMap<PathBuf, ImageProperties>> = Lazy::new(|| {
 
     let mut deserializer = toml::Deserializer::new(&properties);
 
-    HashMap::<PathBuf, ImageProperties>::deserialize(&mut deserializer)
+    BTreeMap::<PathBuf, ImageProperties>::deserialize(&mut deserializer)
         .expect("Unable to deserialize properties")
-});
+}
+
+pub static PROPERTIES: Lazy<BTreeMap<PathBuf, ImageProperties>> = Lazy::new(load_properties);
