@@ -14,7 +14,7 @@ use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, MissedTickBehavior};
 
-use crate::config::{load_properties, string_to_colour, ImageProperties, CONFIG};
+use crate::config::{load_properties, string_to_colour, ImageProperties, Properties, CONFIG};
 use crate::directories::ids::{TempWallpaperID, WallpaperID, TEMP_PROPS};
 use crate::monitors::set_wallpapers;
 use crate::wallpaper::Wallpaper;
@@ -99,7 +99,7 @@ pub async fn run(starting_path: &Path) {
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let (comp_sender, comp_receiver) = mpsc::unbounded_channel();
 
-    let mut properties: Lazy<BTreeMap<_, _>> = Lazy::new(load_properties);
+    let mut properties: Lazy<Properties> = Lazy::new(load_properties);
 
     thread::spawn(move || {
         console(sender, comp_receiver);
@@ -256,7 +256,7 @@ fn install(rel: String, original: &Path) -> Option<PathBuf> {
 fn update_properties(
     wid: &TempWallpaperID,
     res: Option<(NonZeroU32, NonZeroU32)>,
-    properties: &mut BTreeMap<PathBuf, ImageProperties>,
+    properties: &mut Properties,
 ) {
     let slash_path = if let Some(p) = wid.slash_path() {
         p
@@ -273,7 +273,7 @@ fn update_properties(
 }
 
 fn get_or_insert<'a>(
-    properties: &'a mut BTreeMap<PathBuf, ImageProperties>,
+    properties: &'a mut Properties,
     slash_path: &Path,
     res: Option<(NonZeroU32, NonZeroU32)>,
 ) -> &'a mut ImageProperties {
@@ -298,7 +298,7 @@ fn get_or_insert<'a>(
     }
 }
 
-fn write_properties(props: &BTreeMap<PathBuf, ImageProperties>) {
+fn write_properties(props: &Properties) {
     let propfile = CONFIG.originals_directory.join(".properties.toml");
     let backup = CONFIG.originals_directory.join(".properties.toml.bak");
     if propfile.exists() {

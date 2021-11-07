@@ -1,11 +1,13 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 use std::fs::{create_dir, read_to_string};
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::string::ToString;
 
 use image::Rgba;
 use once_cell::sync::Lazy;
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::OPTIONS;
@@ -66,6 +68,7 @@ pub struct ImageProperties {
     // To facilitate deserializing
     #[serde(flatten)]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(serialize_with = "skip_nested_empties")]
     pub nested: BTreeMap<String, BTreeMap<String, ImageProperties>>,
 }
 
@@ -158,6 +161,18 @@ impl ImageProperties {
             + &self.horizontal.unwrap_or_default().to_string()
     }
 
+    pub fn is_empty(&self) -> bool {
+        for n in self.nested.values() {
+            for n in n.values() {
+                if !n.is_empty() {
+                    return false;
+                }
+            }
+        }
+
+        self.full_string().is_empty()
+    }
+
     pub fn copy_from(&mut self, other: &Self) {
         self.vertical = other.vertical;
         self.horizontal = other.horizontal;
@@ -169,10 +184,6 @@ impl ImageProperties {
         self.denoise = other.denoise;
     }
 }
-
-#[derive(Debug, Deserialize)]
-pub struct Properties {}
-
 
 // Serde seems broken with OsString for some reason
 fn empty_path_is_none<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
@@ -207,6 +218,7 @@ where
     ))
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn serialize_colour<S>(v: &Option<Rgba<u8>>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -275,10 +287,76 @@ pub static CONFIG: Lazy<Config> = Lazy::new(|| {
 });
 
 
-pub fn load_properties() -> BTreeMap<PathBuf, ImageProperties> {
+#[derive(Serialize, Deserialize)]
+pub struct Properties {
+    #[serde(flatten)]
+    #[serde(serialize_with = "skip_empties")]
+    props: BTreeMap<PathBuf, ImageProperties>,
+}
+
+impl Deref for Properties {
+    type Target = BTreeMap<PathBuf, ImageProperties>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.props
+    }
+}
+
+impl DerefMut for Properties {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.props
+    }
+}
+
+fn skip_empties<T, S>(map: &BTreeMap<T, ImageProperties>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    T: Serialize,
+    S: Serializer,
+{
+    let filtered: Vec<_> = map.iter().filter(|(_, v)| !v.is_empty()).collect();
+    let mut map_ser = serializer.serialize_map(Some(filtered.len()))?;
+
+    for (k, v) in filtered {
+        map_ser.serialize_entry(k, v)?;
+    }
+    map_ser.end()
+}
+
+fn skip_nested_empties<S>(
+    map: &BTreeMap<String, BTreeMap<String, ImageProperties>>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let filtered: Vec<_> = map
+        .iter()
+        .filter(|(_, v)| {
+            for (_, ip) in v.iter() {
+                if !ip.is_empty() {
+                    return true;
+                }
+            }
+            false
+        })
+        .collect();
+    let mut map_ser = serializer.serialize_map(Some(filtered.len()))?;
+
+    // Empties can still get through if there's a sibling non-empty, but this is good enough for
+    // now.
+    for (k, v) in filtered {
+        map_ser.serialize_entry(k, v)?;
+    }
+    map_ser.end()
+}
+
+
+pub fn load_properties() -> Properties {
     let propfile = CONFIG.originals_directory.join(".properties.toml");
     if !propfile.is_file() {
-        return BTreeMap::new();
+        return Properties {
+            props: BTreeMap::new(),
+        };
     }
 
     // TOML files are UTF-8 by definition
@@ -286,8 +364,7 @@ pub fn load_properties() -> BTreeMap<PathBuf, ImageProperties> {
 
     let mut deserializer = toml::Deserializer::new(&properties);
 
-    BTreeMap::<PathBuf, ImageProperties>::deserialize(&mut deserializer)
-        .expect("Unable to deserialize properties")
+    Properties::deserialize(&mut deserializer).expect("Unable to deserialize properties")
 }
 
-pub static PROPERTIES: Lazy<BTreeMap<PathBuf, ImageProperties>> = Lazy::new(load_properties);
+pub static PROPERTIES: Lazy<Properties> = Lazy::new(load_properties);
