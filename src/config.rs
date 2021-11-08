@@ -332,7 +332,7 @@ where
     let filtered: Vec<_> = map
         .iter()
         .filter(|(_, v)| {
-            for (_, ip) in v.iter() {
+            for ip in v.values() {
                 if !ip.is_empty() {
                     return true;
                 }

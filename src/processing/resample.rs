@@ -350,15 +350,9 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
 // ```filter``` is the filter to use for sampling.
 // The return value is not necessarily Rgba, the underlying order of channels in ```image``` is
 // preserved.
-fn vertical_par_sample<I, P, S>(image: &I, new_height: u32, filter: &mut Filter) -> Rgba32FImage
-where
-    I: GenericImageView<Pixel = P> + Sync,
-    P: Pixel<Subpixel = S> + 'static,
-    S: Primitive + 'static,
-{
+fn vertical_par_sample(image: &Rgba32FImage, new_height: u32, filter: &mut Filter) -> Rgba32FImage {
     let (width, height) = image.dimensions();
 
-    let max: f32 = NumCast::from(S::DEFAULT_MAX_VALUE).unwrap();
     let ratio = height as f32 / new_height as f32;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
     let src_support = filter.support * sratio;
@@ -400,29 +394,19 @@ where
                 .for_each(|(x, chunk)| {
                     let mut t = (0.0, 0.0, 0.0, 0.0);
 
+
                     for (i, w) in ws.iter().enumerate() {
                         let p = image.get_pixel(x as u32, left + i as u32);
 
                         #[allow(deprecated)]
-                        let (k1, k2, k3, k4) = p.channels4();
-                        let vec: (f32, f32, f32, f32) = (
-                            NumCast::from(k1).unwrap(),
-                            NumCast::from(k2).unwrap(),
-                            NumCast::from(k3).unwrap(),
-                            NumCast::from(k4).unwrap(),
-                        );
+                        let vec = p.channels4();
 
-                        let linear = (
-                            srgb_to_linear(vec.0 / max),
-                            srgb_to_linear(vec.1 / max),
-                            srgb_to_linear(vec.2 / max),
-                        );
-
-                        t.0 += linear.0 * w;
-                        t.1 += linear.1 * w;
-                        t.2 += linear.2 * w;
+                        t.0 += vec.0 * w;
+                        t.1 += vec.1 * w;
+                        t.2 += vec.2 * w;
                         t.3 += vec.3 * w;
                     }
+
 
                     chunk[0] = t.0;
                     chunk[1] = t.1;
@@ -466,7 +450,32 @@ pub fn resize_par_linear(
         },
     };
 
+    let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
+    let (width, height) = image.dimensions();
+    let mut tmp = Rgba32FImage::new(width, height);
+    image
+        .chunks_exact(width as usize * 4)
+        .zip(tmp.chunks_exact_mut(width as usize * 4))
+        .par_bridge()
+        .for_each(|(src, dst)| {
+            src.chunks_exact(4)
+                .zip(dst.chunks_exact_mut(4))
+                .par_bridge()
+                .for_each(|(i, t)| {
+                    let vec: (f32, f32, f32, f32) = (
+                        NumCast::from(i[0]).unwrap(),
+                        NumCast::from(i[1]).unwrap(),
+                        NumCast::from(i[2]).unwrap(),
+                        NumCast::from(i[3]).unwrap(),
+                    );
+                    t[0] = srgb_to_linear(vec.0 / max);
+                    t[1] = srgb_to_linear(vec.1 / max);
+                    t[2] = srgb_to_linear(vec.2 / max);
+                    t[3] = vec.3;
+                })
+        });
+
     // Note: tmp is not necessarily actually Rgba
-    let tmp: Rgba32FImage = vertical_par_sample(image, nheight, &mut method);
+    let tmp: Rgba32FImage = vertical_par_sample(&tmp, nheight, &mut method);
     horizontal_par_sample(&tmp, nwidth, &mut method)
 }

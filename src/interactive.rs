@@ -30,6 +30,7 @@ enum Command {
     Right(i32),
     Background(Rgba<u8>),
     Denoise(i32),
+    // Reset, -- TODO
     Install(String, Option<(NonZeroU32, NonZeroU32)>),
     Update(Option<(NonZeroU32, NonZeroU32)>),
     Help,
