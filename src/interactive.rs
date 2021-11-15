@@ -145,9 +145,11 @@ pub async fn run(starting_path: &Path) {
             Command::Install(rel, res) => {
                 if let Some(new_path) = install(rel, &wid.original_abs_path()) {
                     wid.set_original_path(new_path);
-                    drop(props);
-                    update_properties(&wid, res, &mut properties);
-                    props = TEMP_PROPS.write().unwrap();
+                    if !props.is_empty() {
+                        drop(props);
+                        update_properties(&wid, res, &mut properties);
+                        props = TEMP_PROPS.write().unwrap();
+                    }
                 }
                 // If file exists or is already in the originals directory, stop
                 // Check that extensions match

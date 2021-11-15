@@ -267,7 +267,7 @@ fn horizontal_par_sample(image: &Rgba32FImage, new_width: u32, filter: &mut Filt
     // Create a rotated image and fix it later
     let mut out = ImageBuffer::new(height, new_width);
 
-    out.chunks_exact_mut((height * 4) as usize)
+    out.chunks_exact_mut(height as usize * 4)
         .enumerate()
         .par_bridge()
         .for_each(|(outx, outcol)| {
@@ -359,7 +359,7 @@ fn vertical_par_sample(image: &Rgba32FImage, new_height: u32, filter: &mut Filte
 
     let mut out = ImageBuffer::new(width, new_height);
 
-    out.chunks_exact_mut((width * 4) as usize)
+    out.chunks_exact_mut(width as usize * 4)
         .enumerate()
         .par_bridge()
         .for_each(|(outy, outrow)| {

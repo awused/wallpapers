@@ -60,7 +60,7 @@ checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 [[package]]
 name = "aw-shuffle"
 version = "0.1.0"
-source = "git+https://github.com/awused/go-strpick#810b4b32c66d39cf8f8286e0f0f606ba4f17d6d4"
+source = "git+https://github.com/awused/aw-shuffle#810b4b32c66d39cf8f8286e0f0f606ba4f17d6d4"
 dependencies = [
  "ahash",
  "rand",
@@ -72,12 +72,12 @@ dependencies = [
 [[package]]
 name = "aw-upscale"
 version = "0.1.0"
-source = "git+https://github.com/awused/aw-upscale#7befe284ec9712357f221fb37dac16b1eb55fce6"
+source = "git+https://github.com/awused/aw-upscale#566ca072c932efd733f0e617c7237ec4f0bd7c09"
 
 [[package]]
 name = "awconf"
 version = "0.1.0"
-source = "git+https://github.com/awused/awconf#58798c73d17a049c7f0e11c72148089a6de687c1"
+source = "git+https://github.com/awused/awconf#ed788e5e5c24227a58f3e1a7e92a645ef757dc9e"
 dependencies = [
  "config",
  "dirs",
@@ -141,9 +141,9 @@ checksum = "c4872d67bab6358e59559027aa3b9157c53d9358c51423c17554809a8858e0f8"
 
 [[package]]
 name = "cc"
-version = "1.0.71"
+version = "1.0.72"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79c2681d6594606957bbb8631c4b90a7fcaaa72cdb714743a437b156d6a7eedd"
+checksum = "22a9137b95ea06864e018375b72adfb7db6e6f68cfc8df5a04d00288050485ee"
 dependencies = [
  "jobserver",
 ]
@@ -296,9 +296,9 @@ dependencies = [
 
 [[package]]
 name = "dirs"
-version = "3.0.2"
+version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30baa043103c9d0c2a57cf537cc2f35623889dc0d405e6c3cccfadbc81c71309"
+checksum = "ca3aa72a6f96ea37bbc5aa912f6788242832f75369bdfdadcb0e38423f100059"
 dependencies = [
  "dirs-sys",
 ]
@@ -434,7 +434,7 @@ dependencies = [
 [[package]]
 name = "image"
 version = "0.24.0-alpha"
-source = "git+https://github.com/image-rs/image#4d9497fc66b7ea81282ce68962b3159c942558ea"
+source = "git+https://github.com/image-rs/image#3341bd1566bf9cbfadeb4d70b5500465d862101e"
 dependencies = [
  "bytemuck",
  "byteorder",
@@ -488,9 +488,9 @@ dependencies = [
 
 [[package]]
 name = "libc"
-version = "0.2.106"
+version = "0.2.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a60553f9a9e039a333b4e9b20573b9e9b9c0bb3a11e201ccc48ef4283456d673"
+checksum = "fbe5e23404da5b4f555ef85ebed98fb4083e55a00c317800bc2a50ede9f3d219"
 
 [[package]]
 name = "libloading"
