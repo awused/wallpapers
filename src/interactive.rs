@@ -9,7 +9,6 @@ use std::time::Duration;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{History, Input};
 use image::Rgba;
-use once_cell::unsync::Lazy;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, MissedTickBehavior};
@@ -30,9 +29,9 @@ enum Command {
     Right(i32),
     Background(Rgba<u8>),
     Denoise(i32),
-    // Reset, -- TODO
     Install(String, Option<(NonZeroU32, NonZeroU32)>),
     Update(Option<(NonZeroU32, NonZeroU32)>),
+    Reset,
     Help,
     Print,
     Exit,
@@ -67,6 +66,7 @@ impl From<String> for Command {
             }
             ("update", ..) => parse_res(right).map_or_else(|_| Self::Invalid, Self::Update),
             ("denoise" | "d", Some(i), ..) => Self::Denoise(i),
+            ("reset", ..) => Self::Reset,
             ("help", ..) => Self::Help,
             ("print", ..) => Self::Print,
             ("exit", ..) => Self::Exit,
@@ -99,8 +99,6 @@ pub async fn run(starting_path: &Path) {
 
     let (sender, mut receiver) = mpsc::unbounded_channel();
     let (comp_sender, comp_receiver) = mpsc::unbounded_channel();
-
-    let mut properties: Lazy<Properties> = Lazy::new(load_properties);
 
     thread::spawn(move || {
         console(sender, comp_receiver);
@@ -147,7 +145,7 @@ pub async fn run(starting_path: &Path) {
                     wid.set_original_path(new_path);
                     if !props.is_empty() {
                         drop(props);
-                        update_properties(&wid, res, &mut properties);
+                        update_properties(&wid, res);
                         props = TEMP_PROPS.write().unwrap();
                     }
                 }
@@ -157,10 +155,13 @@ pub async fn run(starting_path: &Path) {
             }
             Command::Update(res) => {
                 drop(props);
-                update_properties(&wid, res, &mut properties);
+                update_properties(&wid, res);
                 props = TEMP_PROPS.write().unwrap();
                 process = false;
                 // If file isn't part of originals directory, stop
+            }
+            Command::Reset => {
+                *props = ImageProperties::default();
             }
             Command::Help => {
                 // TODO -- help
@@ -191,6 +192,7 @@ pub async fn run(starting_path: &Path) {
 fn install(rel: String, original: &Path) -> Option<PathBuf> {
     if original.starts_with(&CONFIG.originals_directory) {
         // TODO -- could this be used for renaming?
+        // Need to handle moving any existing properties, or leave them for manual cleanup.
         println!("Can't install file that is already inside the originals directory");
         return None;
     }
@@ -256,11 +258,7 @@ fn install(rel: String, original: &Path) -> Option<PathBuf> {
     }
 }
 
-fn update_properties(
-    wid: &TempWallpaperID,
-    res: Option<(NonZeroU32, NonZeroU32)>,
-    properties: &mut Properties,
-) {
+fn update_properties(wid: &TempWallpaperID, res: Option<(NonZeroU32, NonZeroU32)>) {
     let slash_path = if let Some(p) = wid.slash_path() {
         p
     } else {
@@ -270,9 +268,10 @@ fn update_properties(
 
     let new_props = TEMP_PROPS.read().unwrap();
 
+    let mut properties = load_properties();
 
-    get_or_insert(properties, &slash_path, res).copy_from(&new_props);
-    write_properties(properties);
+    get_or_insert(&mut properties, &slash_path, res).copy_from(&new_props);
+    write_properties(&properties);
 }
 
 fn get_or_insert<'a>(

@@ -258,12 +258,11 @@ fn sync(clean_monitors: bool) {
 
     let valid_files: HashSet<_> = wallpapers
         .iter()
-        .map(|w| {
+        .flat_map(|w| {
             monitors
                 .iter()
                 .map(|m| w.cached_abs_path(m, &w.get_props(m)))
         })
-        .flatten()
         .collect();
 
     let monitor_dirs: HashSet<_> = monitors.iter().map(Monitor::cache_dir).collect();

@@ -45,7 +45,7 @@ I've included some scripts and registry files for context menu entries that I fi
 
 `wallpapers random`
 
-The random command will set one random wallpaper randomly on each monitor. It favours less recently selected wallpapers (See [go-strpick](https://github.com/awused/go-strpick)) and will not select the same wallpaper for multiple monitors at the same time when there are enough wallpapers to avoid it.
+The random command will set one random wallpaper randomly on each monitor. It favours less recently selected wallpapers (See [aw-shuffle](https://github.com/awused/aw-shuffle)) and will not select the same wallpaper for multiple monitors at the same time when there are enough wallpapers to avoid it.
 
 If one of the selected wallpapers hasn't been cached it will perform the same upscaling and caching as sync. If you're running this as part of a periodic task or cron job this can interrupt whatever you are doing by stressing your GPU, so it's recommended to run sync manually so you can control the timing.
 
