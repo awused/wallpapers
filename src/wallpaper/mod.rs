@@ -223,7 +223,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         // TODO -- simplify the above code now that it's possible.
         overlay(
             &mut output,
-            &sub_input,
+            &*sub_input,
             margin_left as i64,
             margin_top as i64,
         );
@@ -496,7 +496,7 @@ fn translate_image(
 
     overlay(
         &mut output,
-        &sub_img,
+        &*sub_img,
         min(margin_left, width) as i64,
         min(margin_top, height) as i64,
     );

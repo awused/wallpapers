@@ -8,13 +8,13 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::{Options, PersistentShuffler};
 use aw_shuffle::AwShuffler;
+use clap::StructOpt;
 use config::{string_to_colour, ImageProperties, PROPERTIES};
 use crossbeam_utils::thread::scope;
 use directories::ids::{TempWallpaperID, WallpaperID, TEMP_PROPS};
 use monitors::Monitor;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use structopt::StructOpt;
 use tempfile::TempDir;
 use walkdir::{DirEntry, WalkDir};
 
@@ -101,7 +101,7 @@ enum Command {
     },
 }
 
-pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::from_args);
+pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::parse);
 
 fn main() {
     closing::init();
