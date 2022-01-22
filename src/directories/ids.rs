@@ -12,7 +12,7 @@ use tempfile::TempDir;
 use crate::config::{ImageProperties, CONFIG, PROPERTIES};
 use crate::monitors::Monitor;
 
-pub trait WallpaperID: Send + Sync {
+pub trait WallpaperID: Send + Sync + std::fmt::Debug {
     fn original_abs_path(&self) -> PathBuf;
 
     fn cached_abs_path(&self, m: &Monitor, ip: &Option<ImageProperties>) -> PathBuf;
@@ -74,12 +74,7 @@ impl WallpaperID for OriginalWallpaperID {
 
         let props = PROPERTIES.get(&self.0)?;
 
-        let per_monitor = props
-            .nested
-            .get(&a_x)
-            .as_ref()
-            .map(|m| m.get(&a_y))
-            .flatten();
+        let per_monitor = props.nested.get(&a_x).and_then(|m| m.get(&a_y));
         if let Some(monprops) = per_monitor {
             Some(monprops.clone())
         } else {
@@ -89,22 +84,20 @@ impl WallpaperID for OriginalWallpaperID {
 
     // Returns None if no cropping is necessary here.
     fn cropped_rel_path(&self, ip: &Option<ImageProperties>) -> Option<PathBuf> {
-        ip.as_ref()
-            .map(|ip| {
-                let s = ip.crop_pad_string();
-                if s.is_empty() {
-                    return None;
-                }
-                let mut p: OsString = self
-                    .0
-                    .file_name()
-                    .expect("Specified wallpaper has no filename")
-                    .into();
-                p.push(s);
-                p.push(".png");
-                Some(p.into())
-            })
-            .flatten()
+        ip.as_ref().and_then(|ip| {
+            let s = ip.crop_pad_string();
+            if s.is_empty() {
+                return None;
+            }
+            let mut p: OsString = self
+                .0
+                .file_name()
+                .expect("Specified wallpaper has no filename")
+                .into();
+            p.push(s);
+            p.push(".png");
+            Some(p.into())
+        })
     }
 
     fn upscaled_rel_path(&self, scale: NonZeroU8, ip: &Option<ImageProperties>) -> PathBuf {
@@ -198,18 +191,16 @@ impl WallpaperID for TempWallpaperID<'_> {
     }
 
     fn cropped_rel_path(&self, ip: &Option<ImageProperties>) -> Option<PathBuf> {
-        ip.as_ref()
-            .map(|ip| {
-                let s = ip.crop_pad_string();
-                if s.is_empty() {
-                    return None;
-                }
-                let mut p: OsString = self.fname.clone().into();
-                p.push(s);
-                p.push(".png");
-                Some(p.into())
-            })
-            .flatten()
+        ip.as_ref().and_then(|ip| {
+            let s = ip.crop_pad_string();
+            if s.is_empty() {
+                return None;
+            }
+            let mut p: OsString = self.fname.clone().into();
+            p.push(s);
+            p.push(".png");
+            Some(p.into())
+        })
     }
 
     fn upscaled_rel_path(&self, scale: NonZeroU8, ip: &Option<ImageProperties>) -> PathBuf {

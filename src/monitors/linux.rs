@@ -66,8 +66,7 @@ pub fn list() -> Vec<Monitor> {
 pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], temp: bool) {
     let mut x: Vec<_> = wallpapers
         .iter()
-        .map(move |(wid, ms)| ms.iter().map(move |m| (wid, m)))
-        .flatten()
+        .flat_map(move |(wid, ms)| ms.iter().map(move |m| (wid, m)))
         .collect();
 
     x.sort_by_key(|(_, m)| m.index);

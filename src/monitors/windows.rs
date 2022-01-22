@@ -1,5 +1,6 @@
 use std::ffi::c_void;
-use std::{io, ptr};
+use std::time::Duration;
+use std::{io, ptr, thread};
 
 use widestring::U16CString;
 use winapi::shared::windef::RECT;
@@ -106,8 +107,7 @@ pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], _temp: boo
 
     let wallmons: Vec<_> = wallpapers
         .iter()
-        .map(move |(wid, ms)| ms.iter().map(move |m| (wid, m)))
-        .flatten()
+        .flat_map(move |(wid, ms)| ms.iter().map(move |m| (wid, m)))
         .collect();
 
     let r: Result<_, io::Error> = (|| unsafe {
@@ -138,4 +138,8 @@ pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], _temp: boo
         Ok(())
     })();
     drop(r);
+
+    // If the temporary files are cleaned up too fast Windows will fail to change the wallpaper.
+    // 5 seconds is more than enough time for Windows to finish or fail.
+    thread::sleep(Duration::from_secs(5));
 }

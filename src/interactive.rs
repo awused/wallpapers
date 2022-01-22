@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::convert::Into;
 use std::ffi::OsStr;
 use std::fs::{copy, create_dir_all};
 use std::num::{NonZeroI32, NonZeroU32};
@@ -128,10 +129,10 @@ pub async fn run(starting_path: &Path) {
         match command {
             Command::Vertical(v) => props.vertical = if v == 0.0 { None } else { Some(v) },
             Command::Horizontal(h) => props.horizontal = if h == 0.0 { None } else { Some(h) },
-            Command::Top(t) => props.top = NonZeroI32::new(t).map(|x| x.into()),
-            Command::Bottom(b) => props.bottom = NonZeroI32::new(b).map(|x| x.into()),
-            Command::Left(l) => props.left = NonZeroI32::new(l).map(|x| x.into()),
-            Command::Right(r) => props.right = NonZeroI32::new(r).map(|x| x.into()),
+            Command::Top(t) => props.top = NonZeroI32::new(t).map(Into::into),
+            Command::Bottom(b) => props.bottom = NonZeroI32::new(b).map(Into::into),
+            Command::Left(l) => props.left = NonZeroI32::new(l).map(Into::into),
+            Command::Right(r) => props.right = NonZeroI32::new(r).map(Into::into),
             Command::Background(bg) => {
                 props.background = if bg == [0, 0, 0, 0xff].into() {
                     None
@@ -149,8 +150,6 @@ pub async fn run(starting_path: &Path) {
                         props = TEMP_PROPS.write().unwrap();
                     }
                 }
-                // If file exists or is already in the originals directory, stop
-                // Check that extensions match
                 process = false;
             }
             Command::Update(res) => {
@@ -158,7 +157,6 @@ pub async fn run(starting_path: &Path) {
                 update_properties(&wid, res);
                 props = TEMP_PROPS.write().unwrap();
                 process = false;
-                // If file isn't part of originals directory, stop
             }
             Command::Reset => {
                 *props = ImageProperties::default();
