@@ -43,7 +43,7 @@ impl From<String> for Command {
     fn from(s: String) -> Self {
         let s = s.to_ascii_lowercase();
         let trimmed = s.trim();
-        let (left, right) = match s.split_once(" ") {
+        let (left, right) = match s.split_once(' ') {
             Some((a, b)) => (a, b.trim()),
             None => (trimmed, ""),
         };
@@ -384,7 +384,7 @@ fn parse_res(s: &str) -> Result<Option<(NonZeroU32, NonZeroU32)>, ()> {
         return Ok(None);
     }
 
-    let (w, h) = match trimmed.split_once("x") {
+    let (w, h) = match trimmed.split_once('x') {
         Some((a, b)) => (a, b.trim()),
         None => return Err(()),
     };
@@ -415,7 +415,7 @@ fn parse_install(s: &str) -> Result<(String, Option<(NonZeroU32, NonZeroU32)>), 
         return Err(());
     }
 
-    let (path, res) = match trimmed.split_once(" ") {
+    let (path, res) = match trimmed.split_once(' ') {
         Some((a, b)) => (a, b.trim()),
         None => return Ok((trimmed.to_string(), None)),
     };

@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::{Options, PersistentShuffler};
 use aw_shuffle::AwShuffler;
-use clap::StructOpt;
+use clap::Parser;
 use config::{string_to_colour, ImageProperties, PROPERTIES};
 use crossbeam_utils::thread::scope;
 use directories::ids::{TempWallpaperID, WallpaperID, TEMP_PROPS};
@@ -30,21 +30,21 @@ pub(crate) mod monitors;
 pub(crate) mod processing;
 mod wallpaper;
 
-#[derive(Debug, StructOpt)]
-#[structopt(
+#[derive(Debug, Parser)]
+#[clap(
     name = "wallpapers",
     about = "Tool for managing and shuffling a large number of wallpapers"
 )]
 pub struct Opt {
-    #[structopt(short, long, parse(from_os_str))]
+    #[clap(short, long, parse(from_os_str))]
     /// Override the selected config.
     awconf: Option<PathBuf>,
 
-    #[structopt(subcommand)]
+    #[clap(subcommand)]
     cmd: Command,
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 enum Command {
     /// Display a random wallpaper on each monitor.
     Random,
@@ -53,50 +53,55 @@ enum Command {
         /// Also remove all wallpapers for resolutions that don't match any current monitors.
         /// For example, if you used to have a 1080p monitor but got rid of it, this can clean up
         /// unnecessary files.
-        #[structopt(long)]
+        #[clap(long)]
         clean_monitors: bool,
     },
     /// Preview a single wallpaper on every monitor.
     Preview {
-        #[structopt(short, long, allow_hyphen_values = true)]
+        #[clap(short, long, allow_hyphen_values = true)]
         /// Vertical offset as a percentage. Positive values translate the viewport upwards.
         vertical: Option<f64>,
 
-        #[structopt(short, long, allow_hyphen_values = true)]
+        #[clap(short, long, allow_hyphen_values = true)]
         /// Horizontal offset as a percentage. Positive values translate the viewport to the right.
         horizontal: Option<f64>,
 
-        #[structopt(short, long, allow_hyphen_values = true)]
+        #[clap(short, long, allow_hyphen_values = true)]
         /// Rows to crop off the top, negative values pad.
         top: Option<i32>,
 
-        #[structopt(short, long, allow_hyphen_values = true)]
+        #[clap(short, long, allow_hyphen_values = true)]
         /// Rows to crop off the bottom, negative values pad.
         bottom: Option<i32>,
 
-        #[structopt(short, long, allow_hyphen_values = true)]
+        #[clap(short, long, allow_hyphen_values = true)]
         /// Columns to crop off the left, negative values pad.
         left: Option<i32>,
 
-        #[structopt(short, long, allow_hyphen_values = true)]
+        #[clap(short, long, allow_hyphen_values = true)]
         /// Columns to crop off the right, negative values pad.
         right: Option<i32>,
 
-        #[structopt(long = "bg")]
+        #[clap(long = "bg")]
         /// Background colour to use when padding. Black, white, or an RRGGBB hex string. Example:
         /// a1b2c3
         background: Option<String>,
 
-        #[structopt(short, long, allow_hyphen_values = true)]
+        #[clap(short, long, allow_hyphen_values = true)]
         /// Level of denoising to apply. The exact specifics depend on the upscaler being used.
         /// Defaults to 1.
         denoise: Option<i32>,
 
-        #[structopt(parse(from_os_str))]
+        #[clap(parse(from_os_str))]
         file: PathBuf,
+
+        // Clap bug: https://github.com/clap-rs/clap/issues/3403
+        #[clap(long)]
+        /// Print help information
+        help: bool,
     },
     Interactive {
-        #[structopt(parse(from_os_str))]
+        #[clap(parse(from_os_str))]
         file: PathBuf,
     },
 }
@@ -119,6 +124,7 @@ fn main() {
             background,
             denoise,
             file,
+            help: _,
         } => {
             let mut props = TEMP_PROPS.write().unwrap();
             *props = ImageProperties {
