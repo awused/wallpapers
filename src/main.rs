@@ -168,19 +168,15 @@ fn random() {
     let options = Options::default().keep_unrecognized(true);
     let mut shuffler = Shuffler::new(&CONFIG.database, options, Some(wallpapers)).unwrap();
 
-    let selection = shuffler.try_unique_n(monitors.len()).unwrap();
-    let selection: Vec<_> = selection
-        .expect("Impossible")
-        .iter()
-        .map(|wid| (*wid).clone())
-        .collect();
+    let selection = shuffler.try_unique_n(monitors.len()).unwrap().unwrap();
+
 
     // Merge any duplicate wallpapers.
     let mut wids = Vec::new();
     let mut grouped_monitors: Vec<Vec<_>> = Vec::new();
 
     // O(n^2) but the real number of monitors will always be tiny
-    'outer: for (wid, m) in selection.into_iter().zip(monitors.into_iter()) {
+    'outer: for (wid, m) in selection.iter().map(|wid| (*wid).clone()).zip(monitors.into_iter()) {
         for (i, w) in wids.iter().enumerate() {
             if wid == *w {
                 grouped_monitors[i].push(m);
@@ -197,10 +193,7 @@ fn random() {
     }
 
     assert_eq!(wids.len(), grouped_monitors.len());
-    let combined: Vec<_> = wids
-        .iter()
-        .zip(grouped_monitors.iter().map(Vec::as_slice))
-        .collect();
+    let combined: Vec<_> = wids.iter().zip(grouped_monitors.iter().map(Vec::as_slice)).collect();
 
 
     combined.par_iter().for_each(|(wid, monitors)| {
@@ -264,11 +257,7 @@ fn sync(clean_monitors: bool) {
 
     let valid_files: HashSet<_> = wallpapers
         .iter()
-        .flat_map(|w| {
-            monitors
-                .iter()
-                .map(|m| w.cached_abs_path(m, &w.get_props(m)))
-        })
+        .flat_map(|w| monitors.iter().map(|m| w.cached_abs_path(m, &w.get_props(m))))
         .collect();
 
     let monitor_dirs: HashSet<_> = monitors.iter().map(Monitor::cache_dir).collect();
@@ -278,36 +267,33 @@ fn sync(clean_monitors: bool) {
         .collect::<Result<Vec<_>, _>>()
         .unwrap();
 
-    walk.into_iter()
-        .map(DirEntry::into_path)
-        .filter(|e| e.is_file())
-        .for_each(|f| {
-            if !clean_monitors && !monitor_dirs.iter().any(|p| f.starts_with(p)) {
-                return;
+    walk.into_iter().map(DirEntry::into_path).filter(|e| e.is_file()).for_each(|f| {
+        if !clean_monitors && !monitor_dirs.iter().any(|p| f.starts_with(p)) {
+            return;
+        }
+
+        if valid_files.contains(&f) {
+            return;
+        }
+
+        assert!(f.starts_with(&CONFIG.cache_directory));
+
+        remove_file(&f).expect("Failed to delete file");
+
+        let mut removed = &*f;
+        // Remove any empty parent directories
+        while let Some(p) = removed.parent() {
+            if !p.starts_with(&CONFIG.cache_directory) || p == CONFIG.cache_directory {
+                break;
             }
 
-            if valid_files.contains(&f) {
-                return;
+            if remove_dir(p).is_err() {
+                break;
             }
 
-            assert!(f.starts_with(&CONFIG.cache_directory));
-
-            remove_file(&f).expect("Failed to delete file");
-
-            let mut removed = &*f;
-            // Remove any empty parent directories
-            while let Some(p) = removed.parent() {
-                if !p.starts_with(&CONFIG.cache_directory) || p == CONFIG.cache_directory {
-                    break;
-                }
-
-                if remove_dir(p).is_err() {
-                    break;
-                }
-
-                removed = p;
-            }
-        });
+            removed = p;
+        }
+    });
 
     let mut props_copy = PROPERTIES.clone();
     for w in wallpapers {

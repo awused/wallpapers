@@ -134,11 +134,7 @@ pub async fn run(starting_path: &Path) {
             Command::Left(l) => props.left = NonZeroI32::new(l).map(Into::into),
             Command::Right(r) => props.right = NonZeroI32::new(r).map(Into::into),
             Command::Background(bg) => {
-                props.background = if bg == [0, 0, 0, 0xff].into() {
-                    None
-                } else {
-                    Some(bg)
-                }
+                props.background = if bg == [0, 0, 0, 0xff].into() { None } else { Some(bg) }
             }
             Command::Denoise(d) => props.denoise = if d != 1 { Some(d) } else { None },
             Command::Install(rel, res) => {
@@ -208,10 +204,7 @@ fn install(rel: String, original: &Path) -> Option<PathBuf> {
     ) {
         (Some(a), Some(b)) if a == b => (),
         (_, Some(b)) => {
-            println!(
-                "New extension doesn't match old extension, should be {:?}",
-                b
-            );
+            println!("New extension doesn't match old extension, should be {:?}", b);
             return None;
         }
         _ => (),
@@ -243,10 +236,7 @@ fn install(rel: String, original: &Path) -> Option<PathBuf> {
 
     match std::fs::copy(original, &new_path) {
         Ok(_) => {
-            println!(
-                "Installed wallpaper to {:?}, did not delete {:?}",
-                new_path, original
-            );
+            println!("Installed wallpaper to {:?}, did not delete {:?}", new_path, original);
             Some(new_path)
         }
         Err(e) => {
@@ -356,10 +346,7 @@ struct ConsoleHistory {
 
 impl Default for ConsoleHistory {
     fn default() -> Self {
-        Self {
-            max: 128,
-            history: VecDeque::new(),
-        }
+        Self { max: 128, history: VecDeque::new() }
     }
 }
 
@@ -403,10 +390,7 @@ fn parse_res(s: &str) -> Result<Option<(NonZeroU32, NonZeroU32)>, ()> {
         a = c;
     }
 
-    Ok(Some((
-        NonZeroU32::new(w / a).unwrap(),
-        NonZeroU32::new(h / a).unwrap(),
-    )))
+    Ok(Some((NonZeroU32::new(w / a).unwrap(), NonZeroU32::new(h / a).unwrap())))
 }
 
 fn parse_install(s: &str) -> Result<(String, Option<(NonZeroU32, NonZeroU32)>), ()> {
@@ -430,7 +414,7 @@ fn parse_install(s: &str) -> Result<(String, Option<(NonZeroU32, NonZeroU32)>), 
 // Canonicalize fails to handle files/directories that do not exist.
 pub fn normalize_path(path: &Path) -> PathBuf {
     let mut components = path.components().peekable();
-    let mut ret = if let Some(c @ Component::Prefix(..)) = components.peek().cloned() {
+    let mut ret = if let Some(c @ Component::Prefix(..)) = components.peek().copied() {
         components.next();
         PathBuf::from(c.as_os_str())
     } else {

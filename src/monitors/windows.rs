@@ -41,12 +41,7 @@ unsafe fn get_monitor(dtop: &IDesktopWallpaper, n: u32) -> Result<Option<Monitor
     // We can free the memory Windows allocated immediately.
     CoTaskMemFree(monitor_id as *mut c_void);
 
-    let mut rect = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
+    let mut rect = RECT { left: 0, top: 0, right: 0, bottom: 0 };
     let result = dtop.GetMonitorRECT(path.as_ptr(), &mut rect);
     if result != E_FAIL {
         check(result)?;

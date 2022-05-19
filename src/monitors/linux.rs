@@ -39,7 +39,7 @@ pub fn list() -> Vec<Monitor> {
         }
 
         let mut num: i32 = 4;
-        let screen_info = xinerama::XineramaQueryScreens(dpy, &mut num as *mut i32);
+        let screen_info = xinerama::XineramaQueryScreens(dpy, std::ptr::addr_of_mut!(num));
         if screen_info.is_null() || num <= 0 {
             println!("Failed list screens in X session {:?}", display);
             xlib::XFree(screen_info as *mut c_void);
@@ -80,8 +80,7 @@ pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], temp: bool
             cmd.arg("--no-fehbg");
         }
 
-        cmd.output()
-            .expect("Error setting wallpapers for X session");
+        cmd.output().expect("Error setting wallpapers for X session");
     } else {
         todo!()
     }

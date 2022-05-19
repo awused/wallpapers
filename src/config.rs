@@ -74,15 +74,8 @@ pub struct ImageProperties {
 
 impl Display for ImageProperties {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        static FIELDS: [&str; 7] = [
-            "vertical",
-            "horizontal",
-            "top",
-            "bottom",
-            "left",
-            "right",
-            "denoise",
-        ];
+        static FIELDS: [&str; 7] =
+            ["vertical", "horizontal", "top", "bottom", "left", "right", "denoise"];
         let values = [
             &self.vertical.as_ref().map(ToString::to_string),
             &self.horizontal.as_ref().map(ToString::to_string),
@@ -192,11 +185,7 @@ where
     T: From<PathBuf>,
 {
     let s = PathBuf::deserialize(deserializer)?;
-    if s.as_os_str().is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(s.into()))
-    }
+    if s.as_os_str().is_empty() { Ok(None) } else { Ok(Some(s.into())) }
 }
 
 fn zero_is_none<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
@@ -241,15 +230,7 @@ pub fn string_to_colour(s: &str) -> Option<Rgba<u8>> {
     }
     let c = u32::from_str_radix(&s, 16).ok()?;
 
-    Some(
-        [
-            (c >> 16) as u8,
-            ((c >> 8) & 0xff) as u8,
-            (c & 0xff) as u8,
-            0xff,
-        ]
-        .into(),
-    )
+    Some([(c >> 16) as u8, ((c >> 8) & 0xff) as u8, (c & 0xff) as u8, 0xff].into())
 }
 
 fn colour_to_string(c: Rgba<u8>) -> String {
@@ -354,9 +335,7 @@ where
 pub fn load_properties() -> Properties {
     let propfile = CONFIG.originals_directory.join(".properties.toml");
     if !propfile.is_file() {
-        return Properties {
-            props: BTreeMap::new(),
-        };
+        return Properties { props: BTreeMap::new() };
     }
 
     // TOML files are UTF-8 by definition

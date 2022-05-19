@@ -47,11 +47,7 @@ impl Res {
     }
 
     fn get_scale(self, props: &Option<ImageProperties>, m: &Monitor) -> NonZeroU8 {
-        let r = if let Some(props) = props {
-            self.apply_crop_pad(props)
-        } else {
-            self
-        };
+        let r = if let Some(props) = props { self.apply_crop_pad(props) } else { self };
 
         if r.is_empty() {
             return NonZeroU8::new(1).unwrap();
@@ -104,7 +100,7 @@ pub struct Wallpaper<'a, T: WallpaperID> {
 }
 
 impl<'a, T: WallpaperID> Wallpaper<'a, T> {
-    pub fn new(id: &'a T, monitors: &'a [Monitor], parent_tdir: &'a TempDir) -> Self {
+    pub const fn new(id: &'a T, monitors: &'a [Monitor], parent_tdir: &'a TempDir) -> Self {
         Self {
             id,
             monitors,
@@ -170,11 +166,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         }
 
         let mut input = image::open(self.id.original_abs_path()).unwrap_or_else(|e| {
-            panic!(
-                "Unable to read image {:?}: {}",
-                self.id.original_abs_path(),
-                e
-            )
+            panic!("Unable to read image {:?}: {}", self.id.original_abs_path(), e)
         });
         let props = uf.props.as_ref().expect("Impossible");
         let output_file = uf.cropped.as_ref().expect("Impossible").path();
@@ -221,23 +213,13 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
 
 
         // TODO -- simplify the above code now that it's possible.
-        overlay(
-            &mut output,
-            &*sub_input,
-            margin_left as i64,
-            margin_top as i64,
-        );
+        overlay(&mut output, &*sub_input, margin_left as i64, margin_top as i64);
 
         let f = File::create(output_file).expect("Couldn't create output file");
         let enc = PngEncoder::new_with_quality(f, CompressionType::Fast, FilterType::Sub);
 
-        enc.write_image(
-            output.as_raw(),
-            output.width(),
-            output.height(),
-            ColorType::Rgba8,
-        )
-        .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", output_file, e))
+        enc.write_image(output.as_raw(), output.width(), output.height(), ColorType::Rgba8)
+            .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", output_file, e))
     }
 
     fn upscale(&self, uf: &UncachedFiles) {
@@ -247,11 +229,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
 
         let mut upscaler = Upscaler::new(CONFIG.alternate_upscaler.clone());
         upscaler.set_scale(uf.scale.get());
-        if let Some(ImageProperties {
-            denoise: Some(denoise),
-            ..
-        }) = uf.props
-        {
+        if let Some(ImageProperties { denoise: Some(denoise), .. }) = uf.props {
             upscaler.set_denoise(Some(denoise));
         } else {
             upscaler.set_denoise(Some(1));
@@ -266,13 +244,12 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             )
             .map_or_else(
                 |e| {
-                    if !closing::closed() {
-                        panic!(
-                            "Failed to upscale image {:?}: {}",
-                            self.id.original_abs_path(),
-                            e
-                        )
-                    }
+                    assert!(
+                        closing::closed(),
+                        "Failed to upscale image {:?}: {}",
+                        self.id.original_abs_path(),
+                        e
+                    );
                 },
                 |_| (),
             );
@@ -284,31 +261,21 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         }
 
         create_dir_all(
-            uf.final_file
-                .parent()
-                .expect("Impossible for cached file to have no directory"),
+            uf.final_file.parent().expect("Impossible for cached file to have no directory"),
         )
         .expect("Unable to create cache directories");
 
         let mut img = image::open(uf.scaled.path())
             .unwrap_or_else(|e| panic!("Unable to read image {:?}: {}", uf.scaled.path(), e));
 
-        if let Some(ImageProperties {
-            vertical,
-            horizontal,
-            ..
-        }) = uf.props.as_ref()
-        {
+        if let Some(ImageProperties { vertical, horizontal, .. }) = uf.props.as_ref() {
             img = translate_image(img, vertical, horizontal);
         }
 
         let (m_w, m_h) = (uf.m.width, uf.m.height);
 
         let img = if img.width() != m_w && img.height() != m_h {
-            let ratio = f64::max(
-                m_w as f64 / img.width() as f64,
-                m_h as f64 / img.height() as f64,
-            );
+            let ratio = f64::max(m_w as f64 / img.width() as f64, m_h as f64 / img.height() as f64);
 
             let int_w = (img.width() as f64 * ratio).round() as u32;
             let int_h = (img.height() as f64 * ratio).round() as u32;
@@ -335,11 +302,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         let f = File::create(&uf.final_file).expect("Couldn't create output file");
         let enc = PngEncoder::new_with_quality(
             f,
-            if compress {
-                CompressionType::Best
-            } else {
-                CompressionType::Fast
-            },
+            if compress { CompressionType::Best } else { CompressionType::Fast },
             FilterType::Sub,
         );
 
@@ -348,9 +311,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
     }
 
     fn get_uncached_files(&self) -> Vec<UncachedFiles> {
-        let mtime = *self
-            .mtime
-            .get_or_init(|| get_mtime(self.id.original_abs_path()));
+        let mtime = *self.mtime.get_or_init(|| get_mtime(self.id.original_abs_path()));
 
         let mut dedupe = HashSet::new();
 
@@ -375,10 +336,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         uncached_monitors
             .into_iter()
             .map(|(m, final_file, props)| {
-                let cropped = self
-                    .id
-                    .cropped_rel_path(&props)
-                    .map(|p| self.get_tdir().join(p));
+                let cropped = self.id.cropped_rel_path(&props).map(|p| self.get_tdir().join(p));
                 let cropped = if let Some(cropped) = cropped {
                     if !dedupe.contains(&cropped) {
                         dedupe.insert(cropped.clone());
@@ -396,9 +354,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
 
                 let scale = self.get_resolution().get_scale(&props, m);
 
-                let scaled = self
-                    .get_tdir()
-                    .join(self.id.upscaled_rel_path(scale, &props));
+                let scaled = self.get_tdir().join(self.id.upscaled_rel_path(scale, &props));
                 let scaled = if !dedupe.contains(&scaled) {
                     dedupe.insert(scaled.clone());
                     if scaled.is_file() {
@@ -426,10 +382,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         *self.resolution.get_or_init(|| {
             image::image_dimensions(self.id.original_abs_path())
                 .unwrap_or_else(|_| {
-                    panic!(
-                        "Unable to read resolution of image {:?}",
-                        self.id.original_abs_path()
-                    )
+                    panic!("Unable to read resolution of image {:?}", self.id.original_abs_path())
                 })
                 .into()
         })

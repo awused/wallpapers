@@ -169,11 +169,7 @@ fn sinc(t: f32) -> f32 {
 
 // lanczos kernel function. A windowed sinc function.
 fn lanczos(x: f32, t: f32) -> f32 {
-    if x.abs() < t {
-        sinc(x) * sinc(x / t)
-    } else {
-        0.0
-    }
+    if x.abs() < t { sinc(x) * sinc(x / t) } else { 0.0 }
 }
 
 // Calculate a splice based on the b and c parameters.
@@ -235,20 +231,12 @@ pub(crate) fn box_kernel(_x: f32) -> f32 {
 
 #[inline]
 fn srgb_to_linear(s: f32) -> f32 {
-    if s <= 0.04045 {
-        s / 12.92
-    } else {
-        f32::powf((s + 0.055) / 1.055, 2.4)
-    }
+    if s <= 0.04045 { s / 12.92 } else { f32::powf((s + 0.055) / 1.055, 2.4) }
 }
 
 #[inline]
 fn linear_to_srgb(s: f32) -> f32 {
-    if s <= 0.0031308 {
-        s * 12.92
-    } else {
-        1.055 * f32::powf(s, 1.0 / 2.4) - 0.055
-    }
+    if s <= 0.0031308 { s * 12.92 } else { 1.055 * f32::powf(s, 1.0 / 2.4) - 0.055 }
 }
 
 
@@ -273,10 +261,8 @@ fn horizontal_par_sample(
     // Create a rotated image and fix it later
     let mut out = ImageBuffer::new(height, new_width);
 
-    out.chunks_exact_mut(height as usize * 4)
-        .enumerate()
-        .par_bridge()
-        .for_each(|(outx, outcol)| {
+    out.chunks_exact_mut(height as usize * 4).enumerate().par_bridge().for_each(
+        |(outx, outcol)| {
             // Find the point in the input image corresponding to the centre
             // of the current pixel in the output image.
             let inputx = (outx as f32 + 0.5) * ratio;
@@ -291,11 +277,9 @@ fn horizontal_par_sample(
             let left = clamp(left, 0, <i64 as From<_>>::from(width) - 1) as u32;
 
             let right = (inputx + src_support).ceil() as i64;
-            let right = clamp(
-                right,
-                <i64 as From<_>>::from(left) + 1,
-                <i64 as From<_>>::from(width),
-            ) as u32;
+            let right =
+                clamp(right, <i64 as From<_>>::from(left) + 1, <i64 as From<_>>::from(width))
+                    as u32;
 
             // Go back to left boundary of pixel, to properly compare with i
             // below, as the kernel treats the centre of a pixel as 0.
@@ -310,41 +294,39 @@ fn horizontal_par_sample(
             }
             ws.iter_mut().for_each(|w| *w /= sum);
 
-            outcol
-                .chunks_exact_mut(4)
-                .enumerate()
-                .for_each(|(y, chunk)| {
-                    let mut t = (0.0, 0.0, 0.0, 0.0);
+            outcol.chunks_exact_mut(4).enumerate().for_each(|(y, chunk)| {
+                let mut t = (0.0, 0.0, 0.0, 0.0);
 
-                    for (i, w) in ws.iter().enumerate() {
-                        let p = image.get_pixel(left + i as u32, y as u32);
+                for (i, w) in ws.iter().enumerate() {
+                    let p = image.get_pixel(left + i as u32, y as u32);
 
-                        #[allow(deprecated)]
-                        let vec = p.channels4();
+                    #[allow(deprecated)]
+                    let vec = p.channels4();
 
-                        t.0 += vec.0 * w;
-                        t.1 += vec.1 * w;
-                        t.2 += vec.2 * w;
-                        t.3 += vec.3 * w;
-                    }
+                    t.0 += vec.0 * w;
+                    t.1 += vec.1 * w;
+                    t.2 += vec.2 * w;
+                    t.3 += vec.3 * w;
+                }
 
-                    t.0 = linear_to_srgb(t.0) * max;
-                    t.1 = linear_to_srgb(t.1) * max;
-                    t.2 = linear_to_srgb(t.2) * max;
+                t.0 = linear_to_srgb(t.0) * max;
+                t.1 = linear_to_srgb(t.1) * max;
+                t.2 = linear_to_srgb(t.2) * max;
 
-                    let t = (
-                        NumCast::from(FloatNearest(clamp(t.0, min, max))).unwrap(),
-                        NumCast::from(FloatNearest(clamp(t.1, min, max))).unwrap(),
-                        NumCast::from(FloatNearest(clamp(t.2, min, max))).unwrap(),
-                        NumCast::from(FloatNearest(clamp(t.3, min, max))).unwrap(),
-                    );
+                let t = (
+                    NumCast::from(FloatNearest(clamp(t.0, min, max))).unwrap(),
+                    NumCast::from(FloatNearest(clamp(t.1, min, max))).unwrap(),
+                    NumCast::from(FloatNearest(clamp(t.2, min, max))).unwrap(),
+                    NumCast::from(FloatNearest(clamp(t.3, min, max))).unwrap(),
+                );
 
-                    chunk[0] = t.0;
-                    chunk[1] = t.1;
-                    chunk[2] = t.2;
-                    chunk[3] = t.3;
-                });
-        });
+                chunk[0] = t.0;
+                chunk[1] = t.1;
+                chunk[2] = t.2;
+                chunk[3] = t.3;
+            });
+        },
+    );
 
     let ret = ImageBuffer::from_fn(new_width, height, |x, y| out[(y, x)]);
     (ret, out)
@@ -378,11 +360,9 @@ fn vertical_par_sample(image: &RgbaImage, new_height: u32, filter: &mut Filter) 
             let left = clamp(left, 0, <i64 as From<_>>::from(height) - 1) as u32;
 
             let right = (inputy + src_support).ceil() as i64;
-            let right = clamp(
-                right,
-                <i64 as From<_>>::from(left) + 1,
-                <i64 as From<_>>::from(height),
-            ) as u32;
+            let right =
+                clamp(right, <i64 as From<_>>::from(left) + 1, <i64 as From<_>>::from(height))
+                    as u32;
 
             let inputy = inputy - 0.5;
             let mut ws = Vec::with_capacity((right - left) as usize);
@@ -395,31 +375,28 @@ fn vertical_par_sample(image: &RgbaImage, new_height: u32, filter: &mut Filter) 
             }
             ws.iter_mut().for_each(|w| *w /= sum);
 
-            outrow
-                .chunks_exact_mut(4)
-                .enumerate()
-                .for_each(|(x, chunk)| {
-                    let mut t = (0.0, 0.0, 0.0, 0.0);
+            outrow.chunks_exact_mut(4).enumerate().for_each(|(x, chunk)| {
+                let mut t = (0.0, 0.0, 0.0, 0.0);
 
 
-                    for (i, w) in ws.iter().enumerate() {
-                        let p = image.get_pixel(x as u32, left + i as u32);
+                for (i, w) in ws.iter().enumerate() {
+                    let p = image.get_pixel(x as u32, left + i as u32);
 
-                        #[allow(deprecated)]
-                        let vec = p.channels4();
+                    #[allow(deprecated)]
+                    let vec = p.channels4();
 
-                        t.0 += SRGB_LUT[vec.0 as usize] * w;
-                        t.1 += SRGB_LUT[vec.1 as usize] * w;
-                        t.2 += SRGB_LUT[vec.2 as usize] * w;
-                        t.3 += <f32 as NumCast>::from(vec.3).unwrap() * w;
-                    }
+                    t.0 += SRGB_LUT[vec.0 as usize] * w;
+                    t.1 += SRGB_LUT[vec.1 as usize] * w;
+                    t.2 += SRGB_LUT[vec.2 as usize] * w;
+                    t.3 += <f32 as NumCast>::from(vec.3).unwrap() * w;
+                }
 
 
-                    chunk[0] = t.0;
-                    chunk[1] = t.1;
-                    chunk[2] = t.2;
-                    chunk[3] = t.3;
-                });
+                chunk[0] = t.0;
+                chunk[1] = t.1;
+                chunk[2] = t.2;
+                chunk[3] = t.3;
+            });
         });
 
     out

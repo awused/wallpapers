@@ -41,9 +41,7 @@ impl OriginalWallpaperID {
 
 impl WallpaperID for OriginalWallpaperID {
     fn original_abs_path(&self) -> PathBuf {
-        CONFIG
-            .originals_directory
-            .join(relative_from_slash(&self.0))
+        CONFIG.originals_directory.join(relative_from_slash(&self.0))
     }
 
     fn cached_abs_path(&self, m: &Monitor, ip: &Option<ImageProperties>) -> PathBuf {
@@ -89,11 +87,8 @@ impl WallpaperID for OriginalWallpaperID {
             if s.is_empty() {
                 return None;
             }
-            let mut p: OsString = self
-                .0
-                .file_name()
-                .expect("Specified wallpaper has no filename")
-                .into();
+            let mut p: OsString =
+                self.0.file_name().expect("Specified wallpaper has no filename").into();
             p.push(s);
             p.push(".png");
             Some(p.into())
@@ -101,11 +96,8 @@ impl WallpaperID for OriginalWallpaperID {
     }
 
     fn upscaled_rel_path(&self, scale: NonZeroU8, ip: &Option<ImageProperties>) -> PathBuf {
-        let mut p: OsString = self
-            .0
-            .file_name()
-            .expect("Specified wallpaper has no filename")
-            .into();
+        let mut p: OsString =
+            self.0.file_name().expect("Specified wallpaper has no filename").into();
         if let Some(ip) = ip.as_ref() {
             p.push(ip.crop_pad_string());
             p.push("-");
@@ -142,11 +134,7 @@ impl<'a> TempWallpaperID<'a> {
     pub fn new<P: AsRef<Path>>(p: P, tdir: &'a TempDir) -> Self {
         Self {
             path: RwLock::new(p.as_ref().to_path_buf()),
-            fname: p
-                .as_ref()
-                .file_name()
-                .expect("Wallpaper has no filename")
-                .into(),
+            fname: p.as_ref().file_name().expect("Wallpaper has no filename").into(),
             tdir,
         }
     }
