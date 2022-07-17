@@ -1,3 +1,4 @@
+use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, VecDeque};
 use std::convert::Into;
 use std::ffi::OsStr;
@@ -39,8 +40,8 @@ enum Command {
     Invalid,
 }
 
-impl From<String> for Command {
-    fn from(s: String) -> Self {
+impl From<&str> for Command {
+    fn from(s: &str) -> Self {
         let s = s.to_ascii_lowercase();
         let trimmed = s.trim();
         let (left, right) = match s.split_once(' ') {
@@ -76,6 +77,28 @@ impl From<String> for Command {
     }
 }
 
+impl Command {
+    fn process(&self) -> bool {
+        match self {
+            Self::Vertical(_)
+            | Self::Horizontal(_)
+            | Self::Top(_)
+            | Self::Bottom(_)
+            | Self::Left(_)
+            | Self::Right(_)
+            | Self::Background(_)
+            | Self::Denoise(_)
+            | Self::Reset => true,
+            Self::Install(..)
+            | Self::Update(_)
+            | Self::Help
+            | Self::Print
+            | Self::Exit
+            | Self::Invalid => false,
+        }
+    }
+}
+
 
 #[tokio::main(flavor = "current_thread")]
 pub async fn run(starting_path: &Path) {
@@ -106,15 +129,13 @@ pub async fn run(starting_path: &Path) {
     });
 
     loop {
-        let command;
-
-        select! {
-            cmd = receiver.recv() => {
-                if let Some(cmd) = cmd {
-                     command = cmd;
+        let commands = select! {
+            cmds = receiver.recv() => {
+                if let Some(cmds) = cmds {
+                     cmds
                 } else {
                      return;
-                };
+                }
             }
             _ = ticker.tick() => {
                 if closing::closed() {
@@ -122,54 +143,54 @@ pub async fn run(starting_path: &Path) {
                 }
                 continue;
             }
-        }
+        };
 
         let mut props = TEMP_PROPS.write().unwrap();
-        let mut process = true;
-        match command {
-            Command::Vertical(v) => props.vertical = if v == 0.0 { None } else { Some(v) },
-            Command::Horizontal(h) => props.horizontal = if h == 0.0 { None } else { Some(h) },
-            Command::Top(t) => props.top = NonZeroI32::new(t).map(Into::into),
-            Command::Bottom(b) => props.bottom = NonZeroI32::new(b).map(Into::into),
-            Command::Left(l) => props.left = NonZeroI32::new(l).map(Into::into),
-            Command::Right(r) => props.right = NonZeroI32::new(r).map(Into::into),
-            Command::Background(bg) => {
-                props.background = if bg == [0, 0, 0, 0xff].into() { None } else { Some(bg) }
-            }
-            Command::Denoise(d) => props.denoise = if d != 1 { Some(d) } else { None },
-            Command::Install(rel, res) => {
-                if let Some(new_path) = install(rel, &wid.original_abs_path()) {
-                    wid.set_original_path(new_path);
-                    if !props.is_empty() {
-                        drop(props);
-                        update_properties(&wid, res);
-                        props = TEMP_PROPS.write().unwrap();
+        let mut process = false;
+
+        for command in commands {
+            process = process || command.process();
+
+            match command {
+                Command::Vertical(v) => props.vertical = if v == 0.0 { None } else { Some(v) },
+                Command::Horizontal(h) => props.horizontal = if h == 0.0 { None } else { Some(h) },
+                Command::Top(t) => props.top = NonZeroI32::new(t).map(Into::into),
+                Command::Bottom(b) => props.bottom = NonZeroI32::new(b).map(Into::into),
+                Command::Left(l) => props.left = NonZeroI32::new(l).map(Into::into),
+                Command::Right(r) => props.right = NonZeroI32::new(r).map(Into::into),
+                Command::Background(bg) => {
+                    props.background = if bg == [0, 0, 0, 0xff].into() { None } else { Some(bg) }
+                }
+                Command::Denoise(d) => props.denoise = if d != 1 { Some(d) } else { None },
+                Command::Install(rel, res) => {
+                    if let Some(new_path) = install(rel, &wid.original_abs_path()) {
+                        wid.set_original_path(new_path);
+                        if !props.is_empty() {
+                            drop(props);
+                            update_properties(&wid, res);
+                            props = TEMP_PROPS.write().unwrap();
+                        }
                     }
                 }
-                process = false;
-            }
-            Command::Update(res) => {
-                drop(props);
-                update_properties(&wid, res);
-                props = TEMP_PROPS.write().unwrap();
-                process = false;
-            }
-            Command::Reset => {
-                *props = ImageProperties::default();
-            }
-            Command::Help => {
-                // TODO -- help
-                process = false;
-            }
-            Command::Print => {
-                println!("{}", props);
-                process = false;
-            }
-            Command::Exit => return,
-            Command::Invalid => {
-                println!("Invalid command");
-                // TODO -- help
-                process = false;
+                Command::Update(res) => {
+                    drop(props);
+                    update_properties(&wid, res);
+                    props = TEMP_PROPS.write().unwrap();
+                }
+                Command::Reset => {
+                    *props = ImageProperties::default();
+                }
+                Command::Help => {
+                    // TODO -- help
+                }
+                Command::Print => {
+                    println!("{}", props);
+                }
+                Command::Exit => return,
+                Command::Invalid => {
+                    println!("Invalid command");
+                    // TODO -- help
+                }
             }
         }
         drop(props);
@@ -267,22 +288,22 @@ fn get_or_insert<'a>(
     slash_path: &Path,
     res: Option<(NonZeroU32, NonZeroU32)>,
 ) -> &'a mut ImageProperties {
-    if !properties.contains_key(slash_path) {
-        properties.insert(slash_path.to_path_buf(), ImageProperties::default());
-    }
-
-    let ip = properties.get_mut(slash_path).unwrap();
+    // We're not doing this so often that a few clones here are a problem.
+    let ip = match properties.entry(slash_path.to_path_buf()) {
+        Entry::Vacant(v) => v.insert(ImageProperties::default()),
+        Entry::Occupied(o) => o.into_mut(),
+    };
 
     if let Some(res) = res {
         let (x, y) = (res.0.to_string(), res.1.to_string());
-        if !ip.nested.contains_key(&x) {
-            ip.nested.insert(x.clone(), BTreeMap::new());
+        let x_m = match ip.nested.entry(x) {
+            Entry::Vacant(v) => v.insert(BTreeMap::new()),
+            Entry::Occupied(o) => o.into_mut(),
+        };
+        match x_m.entry(y) {
+            Entry::Vacant(v) => v.insert(ImageProperties::default()),
+            Entry::Occupied(o) => o.into_mut(),
         }
-        let x_m = ip.nested.get_mut(&x).unwrap();
-        if !x_m.contains_key(&y) {
-            x_m.insert(y.clone(), ImageProperties::default());
-        }
-        x_m.get_mut(&y).unwrap()
     } else {
         ip
     }
@@ -317,7 +338,7 @@ fn write_properties(props: &Properties) {
     }
 }
 
-fn console(sender: mpsc::UnboundedSender<Command>, mut comp: mpsc::UnboundedReceiver<()>) {
+fn console(sender: mpsc::UnboundedSender<Vec<Command>>, mut comp: mpsc::UnboundedReceiver<()>) {
     let mut history = ConsoleHistory::default();
 
     while let Ok(input) = Input::<String>::with_theme(&ColorfulTheme::default())
@@ -325,7 +346,8 @@ fn console(sender: mpsc::UnboundedSender<Command>, mut comp: mpsc::UnboundedRece
         .with_prompt("wallpapers")
         .interact_text()
     {
-        if sender.send(Command::from(input)).is_err() {
+        let commands = input.split(';').map(Command::from).collect();
+        if sender.send(commands).is_err() {
             closing::close();
             return;
         }

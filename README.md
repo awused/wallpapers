@@ -70,7 +70,7 @@ One thing sync does not do by default is remove cached images for monitors that 
 
 `wallpapers interactive wallpaper.jpg`
 
-Interactively preview a wallpaper on all your monitors, reusing processed files so you can quickly dial in your settings. Using `vertical` and `horizontal` offsets are more efficient than cropping for this as changes will not need to be run through waifu2x. Use the print command to print out a snippet of TOML that can be copied into the configuration file.
+Interactively preview a wallpaper on all your monitors, reusing processed files so you can quickly dial in your settings. Using `vertical` and `horizontal` offsets are more efficient than cropping for this as changes will not need to be run through waifu2x. Use the print command to print out a snippet of TOML that can be copied into the configuration file. Multiple commands can be run at once if they're separated by ";", e.g. "h 10; v 10".
 
 On Windows you'll want probably want to build a separate executable without hiding the console. This can be done by not specifying `--features windows-quiet`. The other option is to use a wrapper program when calling wallpapers.exe from a scheduled task.
 
