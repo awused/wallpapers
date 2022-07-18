@@ -2,14 +2,17 @@ use std::cmp::min;
 use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
 use std::num::NonZeroU8;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
 use aw_upscale::Upscaler;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
-use image::imageops::overlay;
-use image::{ColorType, DynamicImage, GenericImage, ImageBuffer, ImageEncoder, RgbaImage};
-use once_cell::sync::OnceCell;
+use image::imageops::{self, overlay};
+use image::{ColorType, GenericImage, ImageBuffer, ImageEncoder, RgbaImage};
+use lru::LruCache;
+use once_cell::sync::{Lazy, OnceCell};
 use tempfile::TempDir;
 
 use crate::closing;
@@ -19,6 +22,12 @@ use crate::monitors::Monitor;
 use crate::processing::resample::resize_par_linear;
 use crate::processing::resample::FilterType::Lanczos3;
 use crate::processing::{UPSCALING, WORKER};
+
+// This is a small cache because the files can get very large.
+// For interactive or preview this is sufficient.
+// For Sync mode it's enough that it'll dedupe reads to the same file almost every time.
+static FILE_CACHE: Lazy<Mutex<LruCache<PathBuf, Arc<OnceCell<RgbaImage>>>>> =
+    Lazy::new(|| Mutex::new(LruCache::new(4)));
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct Res {
@@ -212,8 +221,12 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         );
 
 
+        // NOTE -- cannot be easily replaced by memcpy in the general case, needs to handle alpha
+        // blending.
         // TODO -- simplify the above code now that it's possible.
         overlay(&mut output, &*sub_input, margin_left as i64, margin_top as i64);
+        // TODO -- throw output in the LruCache here, only if there's no denoising/upscaling
+        // scheduled.
 
         let f = File::create(output_file).expect("Couldn't create output file");
         let enc = PngEncoder::new_with_quality(f, CompressionType::Fast, FilterType::Sub);
@@ -266,17 +279,27 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         .expect("Unable to create cache directories");
 
 
-        // TODO -- some kind of opportunistic caching to avoid duplicate reads.
-        // Most commonly useful here, though potentially if the user has two different aspect
-        // ratios it could be useful during earlier cropping.
-        // Mutex<LruCache<Arc<OnceCell<>>>>
-        let mut img = image::open(uf.scaled.path())
-            .unwrap_or_else(|e| panic!("Unable to read image {:?}: {}", uf.scaled.path(), e))
-            .into_rgba8();
+        let cell = {
+            let mut cache = FILE_CACHE.lock().unwrap();
+            cache
+                .get_or_insert(uf.scaled.path().to_path_buf(), || Arc::default())
+                .unwrap()
+                .clone()
+        };
+
+        // Just double box, this is only dereferenced a few times anyway.
+        let mut img: Box<dyn Deref<Target = RgbaImage>> = Box::new(cell.get_or_init(|| {
+            image::open(uf.scaled.path())
+                .unwrap_or_else(|e| panic!("Unable to read image {:?}: {}", uf.scaled.path(), e))
+                .into_rgba8()
+        }));
 
         if let Some(ImageProperties { vertical, horizontal, .. }) = uf.props.as_ref() {
-            img = translate_image(img, vertical, horizontal);
+            if vertical.is_some() || horizontal.is_some() {
+                img = Box::new(Box::new(translate_image(&img, vertical, horizontal)));
+            }
         }
+
 
         let (m_w, m_h) = (uf.m.width, uf.m.height);
 
@@ -286,22 +309,33 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             let int_w = (img.width() as f64 * ratio).round() as u32;
             let int_h = (img.height() as f64 * ratio).round() as u32;
 
-            img = resize_par_linear(&img, img.dimensions(), (int_w, int_h), Lanczos3);
+            img = Box::new(Box::new(resize_par_linear(
+                &img,
+                img.dimensions(),
+                (int_w, int_h),
+                Lanczos3,
+            )));
         }
-
 
         if img.width() != m_w || img.width() != m_h {
             let (w, h) = img.dimensions();
-            img = DynamicImage::ImageRgba8(img)
-                .crop_imm(w.saturating_sub(m_w) / 2, h.saturating_sub(m_h) / 2, m_w, m_h)
-                .into_rgba8()
+            img = Box::new(Box::new(
+                imageops::crop_imm(
+                    &**img,
+                    w.saturating_sub(m_w) / 2,
+                    h.saturating_sub(m_h) / 2,
+                    m_w,
+                    m_h,
+                )
+                .to_image(),
+            ));
         }
 
         let f = File::create(&uf.final_file).expect("Couldn't create output file");
         let enc = PngEncoder::new_with_quality(
             f,
             if compress { CompressionType::Best } else { CompressionType::Fast },
-            FilterType::Sub,
+            FilterType::NoFilter,
         );
 
         enc.write_image(&*img, img.width(), img.height(), ColorType::Rgba8)
@@ -405,7 +439,7 @@ fn get_mtime<P: AsRef<Path>>(p: P) -> SystemTime {
         .unwrap_or_else(|_| panic!("Could not read modification time of file {:?}", p.as_ref()))
 }
 
-fn translate_image(img: RgbaImage, vertical: &Option<f64>, horizontal: &Option<f64>) -> RgbaImage {
+fn translate_image(img: &RgbaImage, vertical: &Option<f64>, horizontal: &Option<f64>) -> RgbaImage {
     let (v, h) = (vertical.unwrap_or(0.0), horizontal.unwrap_or(0.0));
 
     let (width, height) = (img.width() as usize, img.height() as usize);
@@ -423,7 +457,8 @@ fn translate_image(img: RgbaImage, vertical: &Option<f64>, horizontal: &Option<f
     };
 
     if inset_left == 0 && margin_left == 0 && inset_top == 0 && margin_top == 0 {
-        return img;
+        // This should rarely happen if we actually enter this function.
+        return img.clone();
     }
 
     let src_top = min(inset_top, height);
@@ -432,7 +467,7 @@ fn translate_image(img: RgbaImage, vertical: &Option<f64>, horizontal: &Option<f
     let src_right = width.saturating_sub(margin_left);
 
     // With enough effort this can be done in-place, but it's annoying and not really worth it.
-    let input = img.into_vec();
+    let input = img.as_raw();
     let mut output = vec![0xffu8; width * height * 4];
 
     if src_bottom > src_top && src_right > src_left {

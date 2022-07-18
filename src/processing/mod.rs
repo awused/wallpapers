@@ -28,6 +28,7 @@ pub static UPSCALING: Lazy<ThreadPool> = Lazy::new(|| {
         .expect("Error creating upscaling threadpool")
 });
 
+
 fn handle_panic(_e: Box<dyn Any + Send>) {
     println!("Unexpected panic in thread {}", thread::current().name().unwrap_or("unnamed"));
     closing::close();

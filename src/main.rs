@@ -1,5 +1,11 @@
 #![cfg_attr(feature = "windows-quiet", windows_subsystem = "windows")]
 
+// The tikv fork may not be easily buildable for Windows.
+#[cfg(unix)]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{remove_dir, remove_file};
 use std::path::{Path, PathBuf};
