@@ -8,7 +8,7 @@ use std::time::SystemTime;
 use aw_upscale::Upscaler;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::imageops::overlay;
-use image::{ColorType, DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageEncoder};
+use image::{ColorType, DynamicImage, GenericImage, ImageBuffer, ImageEncoder, RgbaImage};
 use once_cell::sync::OnceCell;
 use tempfile::TempDir;
 
@@ -184,13 +184,13 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
 
         let (inset_left, margin_left) = match props.left {
             Some(left) if left > 0 => (left as u32, 0),
-            Some(left) if left < 0 => (0, left.abs() as u32),
+            Some(left) if left < 0 => (0, left.unsigned_abs()),
             _ => (0, 0),
         };
 
         let (inset_top, margin_top) = match props.top {
             Some(top) if top > 0 => (top as u32, 0),
-            Some(top) if top < 0 => (0, top.abs() as u32),
+            Some(top) if top < 0 => (0, top.unsigned_abs()),
             _ => (0, 0),
         };
 
@@ -219,7 +219,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         let enc = PngEncoder::new_with_quality(f, CompressionType::Fast, FilterType::Sub);
 
         enc.write_image(output.as_raw(), output.width(), output.height(), ColorType::Rgba8)
-            .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", output_file, e))
+            .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", output_file, e));
     }
 
     fn upscale(&self, uf: &UncachedFiles) {
@@ -265,8 +265,14 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         )
         .expect("Unable to create cache directories");
 
+
+        // TODO -- some kind of opportunistic caching to avoid duplicate reads.
+        // Most commonly useful here, though potentially if the user has two different aspect
+        // ratios it could be useful during earlier cropping.
+        // Mutex<LruCache<Arc<OnceCell<>>>>
         let mut img = image::open(uf.scaled.path())
-            .unwrap_or_else(|e| panic!("Unable to read image {:?}: {}", uf.scaled.path(), e));
+            .unwrap_or_else(|e| panic!("Unable to read image {:?}: {}", uf.scaled.path(), e))
+            .into_rgba8();
 
         if let Some(ImageProperties { vertical, horizontal, .. }) = uf.props.as_ref() {
             img = translate_image(img, vertical, horizontal);
@@ -274,30 +280,22 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
 
         let (m_w, m_h) = (uf.m.width, uf.m.height);
 
-        let img = if img.width() != m_w && img.height() != m_h {
+        if img.width() != m_w && img.height() != m_h {
             let ratio = f64::max(m_w as f64 / img.width() as f64, m_h as f64 / img.height() as f64);
 
             let int_w = (img.width() as f64 * ratio).round() as u32;
             let int_h = (img.height() as f64 * ratio).round() as u32;
 
-            let img = img.into_rgba8();
-            let img = resize_par_linear(&img, int_w, int_h, Lanczos3);
+            img = resize_par_linear(&img, img.dimensions(), (int_w, int_h), Lanczos3);
+        }
 
-            DynamicImage::ImageRgba8(img)
-        } else {
-            img
-        };
 
-        let img = if img.width() != m_w || img.width() != m_h {
-            img.crop_imm(
-                img.width().saturating_sub(m_w) / 2,
-                img.height().saturating_sub(m_h) / 2,
-                m_w,
-                m_h,
-            )
-        } else {
-            img
-        };
+        if img.width() != m_w || img.width() != m_h {
+            let (w, h) = img.dimensions();
+            img = DynamicImage::ImageRgba8(img)
+                .crop_imm(w.saturating_sub(m_w) / 2, h.saturating_sub(m_h) / 2, m_w, m_h)
+                .into_rgba8()
+        }
 
         let f = File::create(&uf.final_file).expect("Couldn't create output file");
         let enc = PngEncoder::new_with_quality(
@@ -306,7 +304,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             FilterType::Sub,
         );
 
-        enc.write_image(img.as_bytes(), img.width(), img.height(), img.color())
+        enc.write_image(&*img, img.width(), img.height(), ColorType::Rgba8)
             .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", uf.final_file, e));
     }
 
@@ -407,52 +405,55 @@ fn get_mtime<P: AsRef<Path>>(p: P) -> SystemTime {
         .unwrap_or_else(|_| panic!("Could not read modification time of file {:?}", p.as_ref()))
 }
 
-fn translate_image(
-    img: DynamicImage,
-    vertical: &Option<f64>,
-    horizontal: &Option<f64>,
-) -> DynamicImage {
-    let (v, h) = match (vertical, horizontal) {
-        (None, None) => (0.0, 0.0),
-        (None, Some(h)) => (0.0, *h),
-        (Some(v), None) => (*v, 0.0),
-        (Some(v), Some(h)) => (*v, *h),
-    };
+fn translate_image(img: RgbaImage, vertical: &Option<f64>, horizontal: &Option<f64>) -> RgbaImage {
+    let (v, h) = (vertical.unwrap_or(0.0), horizontal.unwrap_or(0.0));
 
-    let (width, height) = (img.width(), img.height());
+    let (width, height) = (img.width() as usize, img.height() as usize);
 
     let (inset_left, margin_left) = if h < 0.0 {
-        (0, (h / -100.0 * (width as f64)).round() as u32)
+        (0, (h / -100.0 * (width as f64)).round() as usize)
     } else {
-        ((h / 100.0 * (width as f64)).round() as u32, 0)
+        ((h / 100.0 * (width as f64)).round() as usize, 0)
     };
 
     let (inset_top, margin_top) = if v > 0.0 {
-        (0, (v / 100.0 * (height as f64)).round() as u32)
+        (0, (v / 100.0 * (height as f64)).round() as usize)
     } else {
-        ((v / -100.0 * (height as f64)).round() as u32, 0)
+        ((v / -100.0 * (height as f64)).round() as usize, 0)
     };
 
     if inset_left == 0 && margin_left == 0 && inset_top == 0 && margin_top == 0 {
         return img;
     }
 
-    let sub_img = img.view(
-        min(inset_left, img.width()),
-        min(inset_top, img.height()),
-        img.width().saturating_sub(inset_left + margin_left),
-        img.height().saturating_sub(inset_top + margin_top),
-    );
+    let src_top = min(inset_top, height);
+    let src_bottom = height.saturating_sub(margin_top);
+    let src_left = min(inset_left, width);
+    let src_right = width.saturating_sub(margin_left);
 
-    // TODO -- simplify the above code
-    let mut output = ImageBuffer::from_pixel(width, height, [0xff, 0xff, 0xff, 0xff].into());
+    // With enough effort this can be done in-place, but it's annoying and not really worth it.
+    let input = img.into_vec();
+    let mut output = vec![0xffu8; width * height * 4];
 
-    overlay(
-        &mut output,
-        &*sub_img,
-        min(margin_left, width) as i64,
-        min(margin_top, height) as i64,
-    );
+    if src_bottom > src_top && src_right > src_left {
+        let dst_top = min(margin_top, height);
+        let dst_left_byte = min(margin_left, width) * 4;
+        let dst_right_byte = dst_left_byte + (src_right - src_left) * 4;
 
-    DynamicImage::ImageRgba8(output)
+        for (y, row) in output
+            .chunks_exact_mut(width as usize * 4)
+            .enumerate()
+            .skip(dst_top)
+            .take(src_bottom - src_top)
+        {
+            let src_row_start = (src_top + y - dst_top) * width * 4;
+            let src_start = src_row_start + src_left * 4;
+            let src_end = src_row_start + src_right * 4;
+
+            row[dst_left_byte..dst_right_byte].copy_from_slice(&input[src_start..src_end]);
+        }
+    }
+
+
+    RgbaImage::from_vec(width as u32, height as u32, output).unwrap()
 }

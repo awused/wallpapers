@@ -44,7 +44,7 @@ impl From<&str> for Command {
     fn from(s: &str) -> Self {
         let s = s.to_ascii_lowercase();
         let trimmed = s.trim();
-        let (left, right) = match s.split_once(' ') {
+        let (left, right) = match trimmed.split_once(' ') {
             Some((a, b)) => (a, b.trim()),
             None => (trimmed, ""),
         };

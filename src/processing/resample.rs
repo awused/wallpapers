@@ -1,8 +1,6 @@
-use image::{
-    DynamicImage, GenericImageView, ImageBuffer, Pixel, Primitive, Rgba, Rgba32FImage, RgbaImage,
-};
-use num_traits::{clamp, NumCast, ToPrimitive};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Rgba, Rgba32FImage, RgbaImage};
 use rayon::iter::{ParallelBridge, ParallelIterator};
+
 
 // The MIT License (MIT)
 //
@@ -124,42 +122,6 @@ struct Filter<'a> {
     pub(crate) support: f32,
 }
 
-struct FloatNearest(f32);
-
-// to_i64, to_u64, and to_f64 implicitly affect all other lower conversions.
-// Note that to_f64 by default calls to_i64 and thus needs to be overridden.
-impl ToPrimitive for FloatNearest {
-    // to_{i,u}64 is required, to_{i,u}{8,16} are usefull.
-    // If a usecase for full 32 bits is found its trivial to add
-    fn to_i8(&self) -> Option<i8> {
-        self.0.round().to_i8()
-    }
-
-    fn to_i16(&self) -> Option<i16> {
-        self.0.round().to_i16()
-    }
-
-    fn to_i64(&self) -> Option<i64> {
-        self.0.round().to_i64()
-    }
-
-    fn to_u8(&self) -> Option<u8> {
-        self.0.round().to_u8()
-    }
-
-    fn to_u16(&self) -> Option<u16> {
-        self.0.round().to_u16()
-    }
-
-    fn to_u64(&self) -> Option<u64> {
-        self.0.round().to_u64()
-    }
-
-    fn to_f64(&self) -> Option<f64> {
-        self.0.to_f64()
-    }
-}
-
 // sinc function: the ideal sampling filter.
 fn sinc(t: f32) -> f32 {
     let a = t * std::f32::consts::PI;
@@ -178,14 +140,13 @@ fn bc_cubic_spline(x: f32, b: f32, c: f32) -> f32 {
     let a = x.abs();
 
     let k = if a < 1.0 {
-        (12.0 - 9.0 * b - 6.0 * c) * a.powi(3)
-            + (-18.0 + 12.0 * b + 6.0 * c) * a.powi(2)
+        (12.0 - 9.0 * b - 6.0 * c)
+            .mul_add(a.powi(3), 6.0f32.mul_add(c, 12.0f32.mul_add(b, -18.0)) * a.powi(2))
             + (6.0 - 2.0 * b)
     } else if a < 2.0 {
-        (-b - 6.0 * c) * a.powi(3)
-            + (6.0 * b + 30.0 * c) * a.powi(2)
-            + (-12.0 * b - 48.0 * c) * a
-            + (8.0 * b + 24.0 * c)
+        (-12.0 * b - 48.0 * c)
+            .mul_add(a, (-b - 6.0 * c).mul_add(a.powi(3), 6.0f32.mul_add(b, 30.0 * c) * a.powi(2)))
+            + 8.0f32.mul_add(b, 24.0 * c)
     } else {
         0.0
     };
@@ -195,37 +156,37 @@ fn bc_cubic_spline(x: f32, b: f32, c: f32) -> f32 {
 
 /// The Gaussian Function.
 /// ```r``` is the standard deviation.
-pub(crate) fn gaussian(x: f32, r: f32) -> f32 {
+fn gaussian(x: f32, r: f32) -> f32 {
     ((2.0 * std::f32::consts::PI).sqrt() * r).recip() * (-x.powi(2) / (2.0 * r.powi(2))).exp()
 }
 
 /// Calculate the lanczos kernel with a window of 3
-pub(crate) fn lanczos3_kernel(x: f32) -> f32 {
+fn lanczos3_kernel(x: f32) -> f32 {
     lanczos(x, 3.0)
 }
 
 /// Calculate the gaussian function with a
 /// standard deviation of 0.5
-pub(crate) fn gaussian_kernel(x: f32) -> f32 {
+fn gaussian_kernel(x: f32) -> f32 {
     gaussian(x, 0.5)
 }
 
 /// Calculate the Catmull-Rom cubic spline.
 /// Also known as a form of `BiCubic` sampling in two dimensions.
-pub(crate) fn catmullrom_kernel(x: f32) -> f32 {
+fn catmullrom_kernel(x: f32) -> f32 {
     bc_cubic_spline(x, 0.0, 0.5)
 }
 
 /// Calculate the triangle function.
 /// Also known as `BiLinear` sampling in two dimensions.
-pub(crate) fn triangle_kernel(x: f32) -> f32 {
+fn triangle_kernel(x: f32) -> f32 {
     if x.abs() < 1.0 { 1.0 - x.abs() } else { 0.0 }
 }
 
 /// Calculate the box kernel.
 /// Only pixels inside the box should be considered, and those
 /// contribute equally.  So this method simply returns 1.
-pub(crate) fn box_kernel(_x: f32) -> f32 {
+const fn box_kernel(_x: f32) -> f32 {
     1.0
 }
 
@@ -236,24 +197,24 @@ fn srgb_to_linear(s: f32) -> f32 {
 
 #[inline]
 fn linear_to_srgb(s: f32) -> f32 {
-    if s <= 0.0031308 { s * 12.92 } else { 1.055 * f32::powf(s, 1.0 / 2.4) - 0.055 }
+    if s <= 0.003_130_8 {
+        s * 12.92
+    } else {
+        1.055 * f32::powf(s, 1.0 / 2.4) - 0.055
+    }
 }
 
+static MAX: f32 = 255f32;
+static MIN: f32 = 0f32;
 
 // Sample the rows of the supplied image using the provided filter.
 // The height of the image remains unchanged.
 // ```new_width``` is the desired width of the new image
 // ```filter``` is the filter to use for sampling.
 // ```image``` is not necessarily Rgba and the order of channels is passed through.
-fn horizontal_par_sample(
-    image: &Rgba32FImage,
-    new_width: u32,
-    filter: &mut Filter,
-) -> (RgbaImage, RgbaImage) {
+fn horizontal_par_sample(image: Rgba32FImage, new_width: u32, filter: &Filter) -> RgbaImage {
     let (width, height) = image.dimensions();
 
-    let max: f32 = NumCast::from(u8::DEFAULT_MAX_VALUE).unwrap();
-    let min: f32 = NumCast::from(u8::DEFAULT_MIN_VALUE).unwrap();
     let ratio = width as f32 / new_width as f32;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
     let src_support = filter.support * sratio;
@@ -274,12 +235,10 @@ fn horizontal_par_sample(
             // Invariant: 0 <= left < right <= width
 
             let left = (inputx - src_support).floor() as i64;
-            let left = clamp(left, 0, <i64 as From<_>>::from(width) - 1) as u32;
+            let left = left.clamp(0, width as i64 - 1) as u32;
 
             let right = (inputx + src_support).ceil() as i64;
-            let right =
-                clamp(right, <i64 as From<_>>::from(left) + 1, <i64 as From<_>>::from(width))
-                    as u32;
+            let right = right.clamp(left as i64 + 1, width as i64) as u32;
 
             // Go back to left boundary of pixel, to properly compare with i
             // below, as the kernel treats the centre of a pixel as 0.
@@ -309,16 +268,15 @@ fn horizontal_par_sample(
                     t.3 += vec.3 * w;
                 }
 
-                t.0 = linear_to_srgb(t.0) * max;
-                t.1 = linear_to_srgb(t.1) * max;
-                t.2 = linear_to_srgb(t.2) * max;
+                let a_inv = if t.3 != 0. { MAX / t.3 } else { 0. };
 
-                let t = (
-                    NumCast::from(FloatNearest(clamp(t.0, min, max))).unwrap(),
-                    NumCast::from(FloatNearest(clamp(t.1, min, max))).unwrap(),
-                    NumCast::from(FloatNearest(clamp(t.2, min, max))).unwrap(),
-                    NumCast::from(FloatNearest(clamp(t.3, min, max))).unwrap(),
-                );
+                t.0 = linear_to_srgb(t.0 * a_inv) * MAX;
+                t.1 = linear_to_srgb(t.1 * a_inv) * MAX;
+                t.2 = linear_to_srgb(t.2 * a_inv) * MAX;
+
+                // as already does saturating at min/max int values
+                let t =
+                    (t.0.round() as u8, t.1.round() as u8, t.2.round() as u8, t.3.round() as u8);
 
                 chunk[0] = t.0;
                 chunk[1] = t.1;
@@ -328,8 +286,15 @@ fn horizontal_par_sample(
         },
     );
 
-    let ret = ImageBuffer::from_fn(new_width, height, |x, y| out[(y, x)]);
-    (ret, out)
+    let mut rotated = ImageBuffer::new(new_width, height);
+
+    rotated.enumerate_rows_mut().par_bridge().for_each(|(y, row)| {
+        for (x, _, p) in row {
+            *p = out[(y, x)]
+        }
+    });
+
+    rotated
 }
 
 
@@ -339,8 +304,13 @@ fn horizontal_par_sample(
 // ```filter``` is the filter to use for sampling.
 // The return value is not necessarily Rgba, the underlying order of channels in ```image``` is
 // preserved.
-fn vertical_par_sample(image: &RgbaImage, new_height: u32, filter: &mut Filter) -> Rgba32FImage {
-    let (width, height) = image.dimensions();
+fn vertical_par_sample(
+    image: &[u8],
+    current_res: (u32, u32),
+    new_height: u32,
+    filter: &Filter,
+) -> Rgba32FImage {
+    let (width, height) = (current_res.0, current_res.1);
 
     let ratio = height as f32 / new_height as f32;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
@@ -357,12 +327,10 @@ fn vertical_par_sample(image: &RgbaImage, new_height: u32, filter: &mut Filter) 
             let inputy = (outy as f32 + 0.5) * ratio;
 
             let left = (inputy - src_support).floor() as i64;
-            let left = clamp(left, 0, <i64 as From<_>>::from(height) - 1) as u32;
+            let left = left.clamp(0, height as i64 - 1) as u32;
 
             let right = (inputy + src_support).ceil() as i64;
-            let right =
-                clamp(right, <i64 as From<_>>::from(left) + 1, <i64 as From<_>>::from(height))
-                    as u32;
+            let right = right.clamp(left as i64 + 1, height as i64) as u32;
 
             let inputy = inputy - 0.5;
             let mut ws = Vec::with_capacity((right - left) as usize);
@@ -380,15 +348,15 @@ fn vertical_par_sample(image: &RgbaImage, new_height: u32, filter: &mut Filter) 
 
 
                 for (i, w) in ws.iter().enumerate() {
-                    let p = image.get_pixel(x as u32, left + i as u32);
+                    let start = ((left as usize + i) * width as usize + x) * 4;
+                    let vec = &image[start..start + 4];
 
-                    #[allow(deprecated)]
-                    let vec = p.channels4();
+                    let a = vec[3] as f32 / MAX;
 
-                    t.0 += SRGB_LUT[vec.0 as usize] * w;
-                    t.1 += SRGB_LUT[vec.1 as usize] * w;
-                    t.2 += SRGB_LUT[vec.2 as usize] * w;
-                    t.3 += <f32 as NumCast>::from(vec.3).unwrap() * w;
+                    t.0 += SRGB_LUT[vec[0] as usize] * a * w;
+                    t.1 += SRGB_LUT[vec[1] as usize] * a * w;
+                    t.2 += SRGB_LUT[vec[2] as usize] * a * w;
+                    t.3 += vec[3] as f32 * w;
                 }
 
 
@@ -402,13 +370,17 @@ fn vertical_par_sample(image: &RgbaImage, new_height: u32, filter: &mut Filter) 
     out
 }
 
-/// Resize the supplied image to the specified dimensions in linear light, assuming srgb input.
+
+/// Resize the supplied image to the specified dimensions in linear light and premultiplied alpha,
+/// assuming srgb input.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
+#[allow(clippy::missing_panics_doc)]
+#[must_use]
 pub fn resize_par_linear(
-    image: &RgbaImage,
-    nwidth: u32,
-    nheight: u32,
+    image: &[u8],
+    current_res: (u32, u32),
+    target_res: (u32, u32),
     filter: FilterType,
 ) -> RgbaImage {
     let mut method = match filter {
@@ -434,16 +406,12 @@ pub fn resize_par_linear(
         },
     };
 
-    let vert = vertical_par_sample(image, nheight, &mut method);
-    let (ret, horiz_flipped) = horizontal_par_sample(&vert, nwidth, &mut method);
+    assert!(current_res.0 as usize * current_res.1 as usize * 4 == image.len());
 
-    // Drop everything in one single task
-    rayon::spawn(move || {
-        drop(vert);
-        drop(horiz_flipped);
-    });
-    ret
+    let vert = vertical_par_sample(image, current_res, target_res.1, &method);
+    horizontal_par_sample(vert, target_res.0, &method)
 }
+
 
 // Results from doing the calculations as f64
 #[allow(clippy::unreadable_literal)]
