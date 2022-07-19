@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use aw_upscale::Upscaler;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::imageops::{self, overlay};
-use image::{ColorType, GenericImage, ImageBuffer, ImageEncoder, RgbaImage};
+use image::{ColorType, GenericImage, ImageBuffer, ImageEncoder, RgbImage};
 use lru::LruCache;
 use once_cell::sync::{Lazy, OnceCell};
 use tempfile::TempDir;
@@ -26,7 +26,7 @@ use crate::processing::{UPSCALING, WORKER};
 // This is a small cache because the files can get very large.
 // For interactive or preview this is sufficient.
 // For Sync mode it's enough that it'll dedupe reads to the same file almost every time.
-static FILE_CACHE: Lazy<Mutex<LruCache<PathBuf, Arc<OnceCell<RgbaImage>>>>> =
+static FILE_CACHE: Lazy<Mutex<LruCache<PathBuf, Arc<OnceCell<RgbImage>>>>> =
     Lazy::new(|| Mutex::new(LruCache::new(4)));
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -282,16 +282,16 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         let cell = {
             let mut cache = FILE_CACHE.lock().unwrap();
             cache
-                .get_or_insert(uf.scaled.path().to_path_buf(), || Arc::default())
+                .get_or_insert(uf.scaled.path().to_path_buf(), Arc::default)
                 .unwrap()
                 .clone()
         };
 
         // Just double box, this is only dereferenced a few times anyway.
-        let mut img: Box<dyn Deref<Target = RgbaImage>> = Box::new(cell.get_or_init(|| {
+        let mut img: Box<dyn Deref<Target = RgbImage>> = Box::new(cell.get_or_init(|| {
             image::open(uf.scaled.path())
                 .unwrap_or_else(|e| panic!("Unable to read image {:?}: {}", uf.scaled.path(), e))
-                .into_rgba8()
+                .into_rgb8()
         }));
 
         if let Some(ImageProperties { vertical, horizontal, .. }) = uf.props.as_ref() {
@@ -338,7 +338,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             FilterType::NoFilter,
         );
 
-        enc.write_image(&*img, img.width(), img.height(), ColorType::Rgba8)
+        enc.write_image(&*img, img.width(), img.height(), ColorType::Rgb8)
             .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", uf.final_file, e));
     }
 
@@ -439,7 +439,9 @@ fn get_mtime<P: AsRef<Path>>(p: P) -> SystemTime {
         .unwrap_or_else(|_| panic!("Could not read modification time of file {:?}", p.as_ref()))
 }
 
-fn translate_image(img: &RgbaImage, vertical: &Option<f64>, horizontal: &Option<f64>) -> RgbaImage {
+fn translate_image(img: &RgbImage, vertical: &Option<f64>, horizontal: &Option<f64>) -> RgbImage {
+    static CHANNELS: usize = 3;
+
     let (v, h) = (vertical.unwrap_or(0.0), horizontal.unwrap_or(0.0));
 
     let (width, height) = (img.width() as usize, img.height() as usize);
@@ -468,27 +470,34 @@ fn translate_image(img: &RgbaImage, vertical: &Option<f64>, horizontal: &Option<
 
     // With enough effort this can be done in-place, but it's annoying and not really worth it.
     let input = img.as_raw();
-    let mut output = vec![0xffu8; width * height * 4];
+    let mut output = vec![0xffu8; width * height * CHANNELS];
 
     if src_bottom > src_top && src_right > src_left {
+        let row_bytes = width * CHANNELS;
         let dst_top = min(margin_top, height);
-        let dst_left_byte = min(margin_left, width) * 4;
-        let dst_right_byte = dst_left_byte + (src_right - src_left) * 4;
+        let dst_left_byte = min(margin_left, width) * CHANNELS;
+        let dst_right_byte = dst_left_byte + (src_right - src_left) * CHANNELS;
 
-        for (y, row) in output
-            .chunks_exact_mut(width as usize * 4)
-            .enumerate()
-            .skip(dst_top)
-            .take(src_bottom - src_top)
-        {
-            let src_row_start = (src_top + y - dst_top) * width * 4;
-            let src_start = src_row_start + src_left * 4;
-            let src_end = src_row_start + src_right * 4;
+        if src_left == 0 && src_right == width {
+            // Not always appreciably faster, but make an effort.
+            output[dst_top * row_bytes..(dst_top + src_bottom - src_top) * row_bytes]
+                .copy_from_slice(&input[src_top * row_bytes..src_bottom * row_bytes]);
+        } else {
+            for (y, row) in output
+                .chunks_exact_mut(row_bytes)
+                .enumerate()
+                .skip(dst_top)
+                .take(src_bottom - src_top)
+            {
+                let src_row_start = (src_top + y - dst_top) * row_bytes;
+                let src_start = src_row_start + src_left * CHANNELS;
+                let src_end = src_row_start + src_right * CHANNELS;
 
-            row[dst_left_byte..dst_right_byte].copy_from_slice(&input[src_start..src_end]);
+                row[dst_left_byte..dst_right_byte].copy_from_slice(&input[src_start..src_end]);
+            }
         }
     }
 
 
-    RgbaImage::from_vec(width as u32, height as u32, output).unwrap()
+    RgbImage::from_vec(width as u32, height as u32, output).unwrap()
 }

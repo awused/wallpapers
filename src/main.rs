@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs::{remove_dir, remove_file};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 
 use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::{Options, PersistentShuffler};
@@ -208,7 +209,9 @@ fn random() {
 
 
     if !closing::closed() {
+        let start = Instant::now();
         monitors::set_wallpapers(combined.as_slice(), false);
+        println!("feh {:?}", start.elapsed());
     }
 
     // We could close the shuffler earlier but this acts as a de-facto lock preventing other

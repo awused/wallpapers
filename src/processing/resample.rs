@@ -1,4 +1,4 @@
-use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Rgba, Rgba32FImage, RgbaImage};
+use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Rgb32FImage, RgbImage};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 
 
@@ -206,13 +206,15 @@ fn linear_to_srgb(s: f32) -> f32 {
 
 static MAX: f32 = 255f32;
 static MIN: f32 = 0f32;
+// TODO -- just hardcode this and get rid of the branching. It's fine.
+static CHANNELS: usize = 3;
 
 // Sample the rows of the supplied image using the provided filter.
 // The height of the image remains unchanged.
 // ```new_width``` is the desired width of the new image
 // ```filter``` is the filter to use for sampling.
 // ```image``` is not necessarily Rgba and the order of channels is passed through.
-fn horizontal_par_sample(image: Rgba32FImage, new_width: u32, filter: &Filter) -> RgbaImage {
+fn horizontal_par_sample(image: Rgb32FImage, new_width: u32, filter: &Filter) -> RgbImage {
     let (width, height) = image.dimensions();
 
     let ratio = width as f32 / new_width as f32;
@@ -222,8 +224,10 @@ fn horizontal_par_sample(image: Rgba32FImage, new_width: u32, filter: &Filter) -
     // Create a rotated image and fix it later
     let mut out = ImageBuffer::new(height, new_width);
 
-    out.chunks_exact_mut(height as usize * 4).enumerate().par_bridge().for_each(
-        |(outx, outcol)| {
+    out.chunks_exact_mut(height as usize * CHANNELS)
+        .enumerate()
+        .par_bridge()
+        .for_each(|(outx, outcol)| {
             // Find the point in the input image corresponding to the centre
             // of the current pixel in the output image.
             let inputx = (outx as f32 + 0.5) * ratio;
@@ -253,7 +257,7 @@ fn horizontal_par_sample(image: Rgba32FImage, new_width: u32, filter: &Filter) -
             }
             ws.iter_mut().for_each(|w| *w /= sum);
 
-            outcol.chunks_exact_mut(4).enumerate().for_each(|(y, chunk)| {
+            outcol.chunks_exact_mut(CHANNELS).enumerate().for_each(|(y, chunk)| {
                 let mut t = (0.0, 0.0, 0.0, 0.0);
 
                 for (i, w) in ws.iter().enumerate() {
@@ -268,7 +272,11 @@ fn horizontal_par_sample(image: Rgba32FImage, new_width: u32, filter: &Filter) -
                     t.3 += vec.3 * w;
                 }
 
-                let a_inv = if t.3 != 0. { MAX / t.3 } else { 0. };
+                let a_inv = if CHANNELS > 3 {
+                    if t.3 != 0. { MAX / t.3 } else { 0. }
+                } else {
+                    1.0
+                };
 
                 t.0 = linear_to_srgb(t.0 * a_inv) * MAX;
                 t.1 = linear_to_srgb(t.1 * a_inv) * MAX;
@@ -281,10 +289,11 @@ fn horizontal_par_sample(image: Rgba32FImage, new_width: u32, filter: &Filter) -
                 chunk[0] = t.0;
                 chunk[1] = t.1;
                 chunk[2] = t.2;
-                chunk[3] = t.3;
+                if CHANNELS > 3 {
+                    chunk[3] = t.3;
+                }
             });
-        },
-    );
+        });
 
     let mut rotated = ImageBuffer::new(new_width, height);
 
@@ -309,7 +318,7 @@ fn vertical_par_sample(
     current_res: (u32, u32),
     new_height: u32,
     filter: &Filter,
-) -> Rgba32FImage {
+) -> Rgb32FImage {
     let (width, height) = (current_res.0, current_res.1);
 
     let ratio = height as f32 / new_height as f32;
@@ -318,7 +327,7 @@ fn vertical_par_sample(
 
     let mut out = ImageBuffer::new(width, new_height);
 
-    out.chunks_exact_mut(width as usize * 4)
+    out.chunks_exact_mut(width as usize * CHANNELS)
         .enumerate()
         .par_bridge()
         .for_each(|(outy, outrow)| {
@@ -343,27 +352,31 @@ fn vertical_par_sample(
             }
             ws.iter_mut().for_each(|w| *w /= sum);
 
-            outrow.chunks_exact_mut(4).enumerate().for_each(|(x, chunk)| {
+            outrow.chunks_exact_mut(CHANNELS).enumerate().for_each(|(x, chunk)| {
                 let mut t = (0.0, 0.0, 0.0, 0.0);
 
 
                 for (i, w) in ws.iter().enumerate() {
-                    let start = ((left as usize + i) * width as usize + x) * 4;
-                    let vec = &image[start..start + 4];
+                    let start = ((left as usize + i) * width as usize + x) * CHANNELS;
+                    let vec = &image[start..start + CHANNELS];
 
-                    let a = vec[3] as f32 / MAX;
+                    let a = if CHANNELS > 3 { vec[3] as f32 / MAX } else { 1.0 };
 
                     t.0 += SRGB_LUT[vec[0] as usize] * a * w;
                     t.1 += SRGB_LUT[vec[1] as usize] * a * w;
                     t.2 += SRGB_LUT[vec[2] as usize] * a * w;
-                    t.3 += vec[3] as f32 * w;
+                    if CHANNELS > 3 {
+                        t.3 += vec[3] as f32 * w;
+                    }
                 }
 
 
                 chunk[0] = t.0;
                 chunk[1] = t.1;
                 chunk[2] = t.2;
-                chunk[3] = t.3;
+                if CHANNELS > 3 {
+                    chunk[3] = t.3;
+                }
             });
         });
 
@@ -382,7 +395,7 @@ pub fn resize_par_linear(
     current_res: (u32, u32),
     target_res: (u32, u32),
     filter: FilterType,
-) -> RgbaImage {
+) -> RgbImage {
     let mut method = match filter {
         FilterType::Nearest => Filter {
             kernel: Box::new(box_kernel),
@@ -406,7 +419,7 @@ pub fn resize_par_linear(
         },
     };
 
-    assert!(current_res.0 as usize * current_res.1 as usize * 4 == image.len());
+    assert!(current_res.0 as usize * current_res.1 as usize * CHANNELS == image.len());
 
     let vert = vertical_par_sample(image, current_res, target_res.1, &method);
     horizontal_par_sample(vert, target_res.0, &method)
