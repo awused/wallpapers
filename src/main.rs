@@ -10,7 +10,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs::{remove_dir, remove_file};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
+use std::sync::Mutex;
 
 use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::{Options, PersistentShuffler};
@@ -19,11 +19,13 @@ use clap::Parser;
 use config::{string_to_colour, ImageProperties, PROPERTIES};
 use crossbeam_utils::thread::scope;
 use directories::ids::{TempWallpaperID, WallpaperID, TEMP_PROPS};
+use lru::LruCache;
 use monitors::Monitor;
 use once_cell::sync::Lazy;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tempfile::TempDir;
 use walkdir::{DirEntry, WalkDir};
+use wallpaper::OPTIMISTIC_CACHE;
 
 use crate::config::CONFIG;
 use crate::directories::get_all_originals;
@@ -172,6 +174,11 @@ fn random() {
         return;
     }
 
+    // This will only be beneficial on cache misses, but can't hurt.
+    if monitors::supports_memory_papers() {
+        OPTIMISTIC_CACHE.get_or_init(|| Mutex::new(LruCache::new(monitors.len() * 3)));
+    }
+
     let options = Options::default().keep_unrecognized(true);
     let mut shuffler = Shuffler::new(&CONFIG.database, options, Some(wallpapers)).unwrap();
 
@@ -209,9 +216,7 @@ fn random() {
 
 
     if !closing::closed() {
-        let start = Instant::now();
         monitors::set_wallpapers(combined.as_slice(), false);
-        println!("feh {:?}", start.elapsed());
     }
 
     // We could close the shuffler earlier but this acts as a de-facto lock preventing other
@@ -325,6 +330,10 @@ fn preview(path: &Path) {
     if monitors.is_empty() {
         println!("No monitors detected");
         return;
+    }
+
+    if monitors::supports_memory_papers() {
+        OPTIMISTIC_CACHE.get_or_init(|| Mutex::new(LruCache::new(monitors.len() * 3)));
     }
 
     let wid = TempWallpaperID::new(path, &tdir);

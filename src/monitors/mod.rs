@@ -6,9 +6,9 @@ mod windows;
 use std::path::PathBuf;
 
 #[cfg(unix)]
-pub use linux::{list, set_wallpapers, Monitor};
+pub use linux::*;
 #[cfg(windows)]
-pub use windows::{list, set_wallpapers, Monitor};
+pub use windows::*;
 
 use crate::config::CONFIG;
 

@@ -1,8 +1,8 @@
+use std::borrow::Cow;
 use std::cmp::min;
 use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
 use std::num::NonZeroU8;
-use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -10,7 +10,7 @@ use std::time::SystemTime;
 use aw_upscale::Upscaler;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::imageops::{self, overlay};
-use image::{ColorType, GenericImage, ImageBuffer, ImageEncoder, RgbImage};
+use image::{ColorType, GenericImage, ImageBuffer, ImageEncoder, RgbImage, RgbaImage};
 use lru::LruCache;
 use once_cell::sync::{Lazy, OnceCell};
 use tempfile::TempDir;
@@ -27,7 +27,12 @@ use crate::processing::{UPSCALING, WORKER};
 // For interactive or preview this is sufficient.
 // For Sync mode it's enough that it'll dedupe reads to the same file almost every time.
 static FILE_CACHE: Lazy<Mutex<LruCache<PathBuf, Arc<OnceCell<RgbImage>>>>> =
-    Lazy::new(|| Mutex::new(LruCache::new(4)));
+    Lazy::new(|| Mutex::new(LruCache::new(5)));
+
+// This is a larger cache for interactive, preview, and in rare cases random mode.
+// We can skip writing and rereading from disk when we know we're going to set them.
+// For now, these are only "BGRA" images since it only works for X11.
+pub static OPTIMISTIC_CACHE: OnceCell<Mutex<LruCache<PathBuf, RgbaImage>>> = OnceCell::new();
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 struct Res {
@@ -273,6 +278,14 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             return;
         }
 
+        if let Some(guard) = OPTIMISTIC_CACHE.get() {
+            if let Some(_cached) = guard.lock().unwrap().get(&uf.final_file) {
+                // Return early after nudging the value in the LruCache.
+                return;
+            }
+        }
+
+
         create_dir_all(
             uf.final_file.parent().expect("Impossible for cached file to have no directory"),
         )
@@ -288,7 +301,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         };
 
         // Just double box, this is only dereferenced a few times anyway.
-        let mut img: Box<dyn Deref<Target = RgbImage>> = Box::new(cell.get_or_init(|| {
+        let mut img: Cow<RgbImage> = Cow::Borrowed(cell.get_or_init(|| {
             image::open(uf.scaled.path())
                 .unwrap_or_else(|e| panic!("Unable to read image {:?}: {}", uf.scaled.path(), e))
                 .into_rgb8()
@@ -296,7 +309,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
 
         if let Some(ImageProperties { vertical, horizontal, .. }) = uf.props.as_ref() {
             if vertical.is_some() || horizontal.is_some() {
-                img = Box::new(Box::new(translate_image(&img, vertical, horizontal)));
+                img = translate_image(img, vertical, horizontal);
             }
         }
 
@@ -309,37 +322,46 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             let int_w = (img.width() as f64 * ratio).round() as u32;
             let int_h = (img.height() as f64 * ratio).round() as u32;
 
-            img = Box::new(Box::new(resize_par_linear(
-                &img,
-                img.dimensions(),
-                (int_w, int_h),
-                Lanczos3,
-            )));
+            img = Cow::Owned(resize_par_linear(&img, img.dimensions(), (int_w, int_h), Lanczos3));
         }
 
         if img.width() != m_w || img.width() != m_h {
             let (w, h) = img.dimensions();
-            img = Box::new(Box::new(
+            img = Cow::Owned(
                 imageops::crop_imm(
-                    &**img,
+                    &*img,
                     w.saturating_sub(m_w) / 2,
                     h.saturating_sub(m_h) / 2,
                     m_w,
                     m_h,
                 )
                 .to_image(),
-            ));
+            );
         }
 
-        let f = File::create(&uf.final_file).expect("Couldn't create output file");
-        let enc = PngEncoder::new_with_quality(
-            f,
-            if compress { CompressionType::Best } else { CompressionType::Fast },
-            FilterType::NoFilter,
-        );
+        if compress || OPTIMISTIC_CACHE.get().is_none() {
+            let f = File::create(&uf.final_file).expect("Couldn't create output file");
+            let enc = PngEncoder::new_with_quality(
+                f,
+                if compress { CompressionType::Best } else { CompressionType::Fast },
+                FilterType::NoFilter,
+            );
 
-        enc.write_image(&*img, img.width(), img.height(), ColorType::Rgb8)
-            .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", uf.final_file, e));
+            enc.write_image(&*img, img.width(), img.height(), ColorType::Rgb8)
+                .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", uf.final_file, e));
+        }
+
+        if let Some(guard) = OPTIMISTIC_CACHE.get() {
+            // For now, only X11 supports this and it needs BGRA.
+            let mut swizzled = RgbaImage::new(img.width(), img.height());
+            for (s, i) in swizzled.chunks_exact_mut(4).zip(img.chunks_exact(3)) {
+                s[0] = i[2];
+                s[1] = i[1];
+                s[2] = i[0];
+                s[3] = 255;
+            }
+            guard.lock().unwrap().put(uf.final_file.clone(), swizzled);
+        }
     }
 
     fn get_uncached_files(&self) -> Vec<UncachedFiles> {
@@ -439,7 +461,11 @@ fn get_mtime<P: AsRef<Path>>(p: P) -> SystemTime {
         .unwrap_or_else(|_| panic!("Could not read modification time of file {:?}", p.as_ref()))
 }
 
-fn translate_image(img: &RgbImage, vertical: &Option<f64>, horizontal: &Option<f64>) -> RgbImage {
+fn translate_image<'a>(
+    img: Cow<'a, RgbImage>,
+    vertical: &Option<f64>,
+    horizontal: &Option<f64>,
+) -> Cow<'a, RgbImage> {
     static CHANNELS: usize = 3;
 
     let (v, h) = (vertical.unwrap_or(0.0), horizontal.unwrap_or(0.0));
@@ -460,7 +486,7 @@ fn translate_image(img: &RgbImage, vertical: &Option<f64>, horizontal: &Option<f
 
     if inset_left == 0 && margin_left == 0 && inset_top == 0 && margin_top == 0 {
         // This should rarely happen if we actually enter this function.
-        return img.clone();
+        return img;
     }
 
     let src_top = min(inset_top, height);
@@ -499,5 +525,5 @@ fn translate_image(img: &RgbImage, vertical: &Option<f64>, horizontal: &Option<f
     }
 
 
-    RgbImage::from_vec(width as u32, height as u32, output).unwrap()
+    Cow::Owned(RgbImage::from_vec(width as u32, height as u32, output).unwrap())
 }

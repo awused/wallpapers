@@ -9,8 +9,7 @@ A tool for managing and shuffling a large number of wallpapers across multiple m
     * Newer APIs added after Windows 7 remove the need for hacky workarounds.
 * Linux:
     * Currently only works on X11.
-    * Feh is required.
-    * Does not work on Gnome, works only where feh works.
+    * Does not work on Gnome. Doesn't use feh but should work where feh works.
 
 Upscaling has additional default requirements, but can be configured to use others:
 

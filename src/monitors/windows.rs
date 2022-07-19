@@ -58,6 +58,10 @@ unsafe fn get_monitor(dtop: &IDesktopWallpaper, n: u32) -> Result<Option<Monitor
 }
 
 
+pub fn supports_memory_papers() -> bool {
+    false
+}
+
 // In error cases this can leak but we'll be closing the program anyway.
 pub fn list() -> Vec<Monitor> {
     let monitors: Result<_, io::Error> = (|| unsafe {

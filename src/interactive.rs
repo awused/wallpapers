@@ -5,12 +5,14 @@ use std::ffi::OsStr;
 use std::fs::{copy, create_dir_all};
 use std::num::{NonZeroI32, NonZeroU32};
 use std::path::{Component, Path, PathBuf};
+use std::sync::Mutex;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{History, Input};
 use image::Rgba;
+use lru::LruCache;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, MissedTickBehavior};
@@ -18,7 +20,7 @@ use tokio::time::{interval, MissedTickBehavior};
 use crate::config::{load_properties, string_to_colour, ImageProperties, Properties, CONFIG};
 use crate::directories::ids::{TempWallpaperID, WallpaperID, TEMP_PROPS};
 use crate::monitors::set_wallpapers;
-use crate::wallpaper::Wallpaper;
+use crate::wallpaper::{Wallpaper, OPTIMISTIC_CACHE};
 use crate::{closing, make_tdir, monitors};
 
 #[derive(Debug)]
@@ -110,6 +112,10 @@ pub async fn run(starting_path: &Path) {
         return;
     }
 
+    if monitors::supports_memory_papers() {
+        OPTIMISTIC_CACHE.get_or_init(|| Mutex::new(LruCache::new(monitors.len() * 3)));
+    }
+
     println!("Previewing...");
     let wid = TempWallpaperID::new(starting_path, &tdir);
     let wallpaper = Wallpaper::new(&wid, &monitors, &tdir);
@@ -196,12 +202,12 @@ pub async fn run(starting_path: &Path) {
         drop(props);
 
         if process {
-            let start = Instant::now();
+            // let start = Instant::now();
             wallpaper.process(false);
-            println!("process {:?}", start.elapsed());
-            let set = Instant::now();
+            // println!("process {:?}", start.elapsed());
+            // let set = Instant::now();
             set_wallpapers(&[(&wid, &monitors)], true);
-            println!("set {:?} / {:?}", set.elapsed(), start.elapsed());
+            // println!("set {:?} / {:?}", set.elapsed(), start.elapsed());
         }
 
         comp_sender.send(()).unwrap();

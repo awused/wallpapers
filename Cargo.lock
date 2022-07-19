@@ -1094,6 +1094,7 @@ dependencies = [
  "crossbeam-utils",
  "dialoguer",
  "image",
+ "libc",
  "lru",
  "num_cpus",
  "once_cell",
