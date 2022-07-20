@@ -5,7 +5,6 @@ use std::path::Component;
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 
@@ -123,18 +122,18 @@ pub struct TempWallpaperID<'a> {
     // The original filename from creation time.
     // So that we don't need to waste time regenerating files if it is installed.
     fname: PathBuf,
+    // This could safely use UnsafeCell
+    pub props: RwLock<ImageProperties>,
     tdir: &'a TempDir,
 }
 
-// To keep the implementation transparent this reads from a global for preview/interactive
-// mode.
-pub static TEMP_PROPS: Lazy<RwLock<ImageProperties>> = Lazy::new(RwLock::default);
 
 impl<'a> TempWallpaperID<'a> {
-    pub fn new<P: AsRef<Path>>(p: P, tdir: &'a TempDir) -> Self {
+    pub fn new<P: AsRef<Path>>(p: P, props: ImageProperties, tdir: &'a TempDir) -> Self {
         Self {
             path: RwLock::new(p.as_ref().to_path_buf()),
             fname: p.as_ref().file_name().expect("Wallpaper has no filename").into(),
+            props: RwLock::new(props),
             tdir,
         }
     }
@@ -175,7 +174,7 @@ impl WallpaperID for TempWallpaperID<'_> {
     }
 
     fn get_props(&self, _m: &Monitor) -> Option<ImageProperties> {
-        Some(TEMP_PROPS.read().unwrap().clone())
+        Some(self.props.read().unwrap().clone())
     }
 
     fn cropped_rel_path(&self, ip: &Option<ImageProperties>) -> Option<PathBuf> {

@@ -18,7 +18,7 @@ use tokio::sync::mpsc;
 use tokio::time::{interval, MissedTickBehavior};
 
 use crate::config::{load_properties, string_to_colour, ImageProperties, Properties, CONFIG};
-use crate::directories::ids::{TempWallpaperID, WallpaperID, TEMP_PROPS};
+use crate::directories::ids::{TempWallpaperID, WallpaperID};
 use crate::monitors::set_wallpapers;
 use crate::wallpaper::{Wallpaper, OPTIMISTIC_CACHE};
 use crate::{closing, make_tdir, monitors};
@@ -35,7 +35,11 @@ enum Command {
     Denoise(i32),
     Install(String, Option<(NonZeroU32, NonZeroU32)>),
     Update(Option<(NonZeroU32, NonZeroU32)>),
+    // Reset to initial state.
+    // Equivalent to clear when there is no configuration present in .properties.toml
     Reset,
+    // Zero out all properties
+    Clear,
     Help,
     Print,
     Exit,
@@ -71,6 +75,7 @@ impl From<&str> for Command {
             ("update", ..) => parse_res(right).map_or_else(|_| Self::Invalid, Self::Update),
             ("denoise" | "d", Some(i), ..) => Self::Denoise(i),
             ("reset", ..) => Self::Reset,
+            ("clear", ..) => Self::Clear,
             ("help", ..) => Self::Help,
             ("print", ..) => Self::Print,
             ("exit", ..) => Self::Exit,
@@ -90,7 +95,8 @@ impl Command {
             | Self::Right(_)
             | Self::Background(_)
             | Self::Denoise(_)
-            | Self::Reset => true,
+            | Self::Reset
+            | Self::Clear => true,
             Self::Install(..)
             | Self::Update(_)
             | Self::Help
@@ -116,8 +122,32 @@ pub async fn run(starting_path: &Path) {
         OPTIMISTIC_CACHE.get_or_init(|| Mutex::new(LruCache::new(monitors.len() * 3)));
     }
 
+    let wid = TempWallpaperID::new(starting_path, ImageProperties::default(), &tdir);
+
+
+    let initial_props = if let Some(slash_path) = wid.slash_path() {
+        let mut properties = load_properties();
+
+        if let Some(mut props) = properties.remove(&slash_path) {
+            println!("Loaded configured properties:\n{props}");
+
+            if !props.nested.is_empty() {
+                props.nested.clear(); // Doesn't matter for now, but do it anyway
+                println!("Found per-monitor settings. They are ignored in interactive mode.");
+            }
+
+            wid.props.write().unwrap().clone_from(&props);
+
+            props
+        } else {
+            ImageProperties::default()
+        }
+    } else {
+        ImageProperties::default()
+    };
+
     println!("Previewing...");
-    let wid = TempWallpaperID::new(starting_path, &tdir);
+
     let wallpaper = Wallpaper::new(&wid, &monitors, &tdir);
     wallpaper.process(false);
     set_wallpapers(&[(&wid, &monitors)], true);
@@ -151,7 +181,7 @@ pub async fn run(starting_path: &Path) {
             }
         };
 
-        let mut props = TEMP_PROPS.write().unwrap();
+        let mut props = wid.props.write().unwrap();
         let mut process = false;
 
         for command in commands {
@@ -174,23 +204,26 @@ pub async fn run(starting_path: &Path) {
                         if !props.is_empty() {
                             drop(props);
                             update_properties(&wid, res);
-                            props = TEMP_PROPS.write().unwrap();
+                            props = wid.props.write().unwrap();
                         }
                     }
                 }
                 Command::Update(res) => {
                     drop(props);
                     update_properties(&wid, res);
-                    props = TEMP_PROPS.write().unwrap();
+                    props = wid.props.write().unwrap();
                 }
                 Command::Reset => {
+                    props.clone_from(&initial_props);
+                }
+                Command::Clear => {
                     *props = ImageProperties::default();
                 }
                 Command::Help => {
                     // TODO -- help
                 }
                 Command::Print => {
-                    println!("{}", props);
+                    println!("{props}");
                 }
                 Command::Exit => return,
                 Command::Invalid => {
@@ -227,7 +260,6 @@ fn install(rel: String, original: &Path) -> Option<PathBuf> {
         println!("Install path must be relative.");
         return None;
     }
-
 
     match (
         rel.extension().map(OsStr::to_ascii_lowercase),
@@ -285,7 +317,7 @@ fn update_properties(wid: &TempWallpaperID, res: Option<(NonZeroU32, NonZeroU32)
         return;
     };
 
-    let new_props = TEMP_PROPS.read().unwrap();
+    let new_props = wid.props.read().unwrap();
 
     let mut properties = load_properties();
 

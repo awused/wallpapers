@@ -8,7 +8,7 @@ license = "MIT"
 keywords = ["wallpapers", "waifu2x"]
 homepage = "https://github.com/awused/wallpapers"
 repository = "https://github.com/awused/wallpapers"
-links = "X11, Xinerama"
+links = "X11, Xrandr"
 
 
 [dependencies]

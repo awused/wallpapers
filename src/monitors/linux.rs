@@ -9,7 +9,7 @@ use std::{env, mem, ptr};
 use image::RgbaImage;
 use lru::LruCache;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use x11::{xinerama, xlib};
+use x11::{xlib, xrandr};
 
 use crate::directories::ids::WallpaperID;
 use crate::wallpaper::OPTIMISTIC_CACHE;
@@ -21,9 +21,9 @@ static IS_X: AtomicBool = AtomicBool::new(false);
 pub struct Monitor {
     pub width: u32,
     pub height: u32,
-    top: i16,
-    left: i16,
-    pub index: usize,
+    top: i32,
+    left: i32,
+    // index: usize,
 }
 
 pub fn list() -> Vec<Monitor> {
@@ -41,37 +41,43 @@ pub fn list() -> Vec<Monitor> {
     IS_X.store(true, Ordering::Relaxed);
 
     unsafe {
+        use xlib::*;
+        use xrandr::*;
+
         let dpy = xlib::XOpenDisplay(display.as_ptr());
         if dpy.is_null() {
             println!("Failed to open X session {:?}", display);
             return Vec::new();
         }
 
-        let mut num: i32 = 0;
-        let screen_info = xinerama::XineramaQueryScreens(dpy, ptr::addr_of_mut!(num));
-        if screen_info.is_null() || num <= 0 {
-            println!("Failed list screens in X session {:?}", display);
-            if !screen_info.is_null() {
-                xlib::XFree(screen_info as *mut c_void);
+        let screen = XDefaultScreen(dpy);
+        let root = XRootWindow(dpy, screen);
+
+        let resources = XRRGetScreenResources(dpy, root);
+
+        let mut monitors = Vec::new();
+        for output in slice::from_raw_parts((*resources).outputs, (*resources).noutput as usize) {
+            let info = XRRGetOutputInfo(dpy, resources, *output);
+
+            if (*info).connection == RR_Connected as u16 {
+                let crtc = XRRGetCrtcInfo(dpy, resources, (*info).crtc);
+                let cinfo = &*crtc;
+
+                monitors.push(Monitor {
+                    width: cinfo.width,
+                    height: cinfo.height,
+                    top: cinfo.y,
+                    left: cinfo.x,
+                });
+
+                XRRFreeCrtcInfo(crtc);
             }
-            xlib::XCloseDisplay(dpy);
-            return Vec::new();
+
+            XRRFreeOutputInfo(info);
         }
+        XRRFreeScreenResources(resources);
 
-        let monitors = slice::from_raw_parts(screen_info, num as usize)
-            .iter()
-            .enumerate()
-            .map(|(index, si)| Monitor {
-                width: si.width as u32,
-                height: si.height as u32,
-                top: si.y_org,
-                left: si.x_org,
-                index,
-            })
-            .collect();
-
-        xlib::XFree(screen_info as *mut c_void);
-        xlib::XCloseDisplay(dpy);
+        XCloseDisplay(dpy);
 
         monitors
     }
@@ -100,7 +106,7 @@ fn create_x_image(img: &RgbaImage, dpy: *mut xlib::_XDisplay) -> *mut xlib::XIma
     }
 }
 
-// This part was figured out from reading several examples online including feh.
+// This part was figured out from reading several online examples including feh.
 fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
     let xrootmap = CString::new("_XROOTPMAP_ID").unwrap();
     let esetrootmap = CString::new("ESETROOT_PMAP_ID").unwrap();
@@ -232,7 +238,6 @@ fn set_x_wallpapers(
 
     let get_bgra = |p: &PathBuf| cache.peek(p).unwrap_or_else(|| loaded_map.get(p).unwrap());
 
-    // We do not free the contents, but do free the images
     unsafe {
         use xlib::*;
 
@@ -311,12 +316,10 @@ fn set_x_wallpapers(
 }
 
 pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], temp: bool) {
-    let mut x: Vec<_> = wallpapers
+    let x: Vec<_> = wallpapers
         .iter()
         .flat_map(move |(wid, ms)| ms.iter().map(move |m| (wid, m)))
         .collect();
-
-    x.sort_by_key(|(_, m)| m.index);
 
     if IS_X.load(Ordering::Relaxed) {
         if let Some(cache) = OPTIMISTIC_CACHE.get() {

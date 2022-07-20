@@ -18,7 +18,7 @@ use aw_shuffle::AwShuffler;
 use clap::Parser;
 use config::{string_to_colour, ImageProperties, PROPERTIES};
 use crossbeam_utils::thread::scope;
-use directories::ids::{TempWallpaperID, WallpaperID, TEMP_PROPS};
+use directories::ids::{TempWallpaperID, WallpaperID};
 use lru::LruCache;
 use monitors::Monitor;
 use once_cell::sync::Lazy;
@@ -135,8 +135,7 @@ fn main() {
             file,
             help: _,
         } => {
-            let mut props = TEMP_PROPS.write().unwrap();
-            *props = ImageProperties {
+            let props = ImageProperties {
                 vertical: *vertical,
                 horizontal: *horizontal,
                 top: *top,
@@ -149,9 +148,8 @@ fn main() {
                 denoise: *denoise,
                 nested: BTreeMap::new(),
             };
-            drop(props);
 
-            preview(file)
+            preview(file, props);
         }
         Command::Interactive { file } => {
             interactive::run(file);
@@ -323,7 +321,7 @@ fn sync(clean_monitors: bool) {
     shuffler.close().unwrap();
 }
 
-fn preview(path: &Path) {
+fn preview(path: &Path, props: ImageProperties) {
     let tdir = make_tdir();
 
     let monitors = monitors::list();
@@ -336,7 +334,7 @@ fn preview(path: &Path) {
         OPTIMISTIC_CACHE.get_or_init(|| Mutex::new(LruCache::new(monitors.len() * 3)));
     }
 
-    let wid = TempWallpaperID::new(path, &tdir);
+    let wid = TempWallpaperID::new(path, props, &tdir);
     let w = Wallpaper::new(&wid, &monitors, &tdir);
     w.process(false);
 

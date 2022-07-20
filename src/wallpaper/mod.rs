@@ -300,7 +300,8 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                 .clone()
         };
 
-        // Just double box, this is only dereferenced a few times anyway.
+        // TODO -- RgbImage may not be any faster than Rgba, and is incompatible with OpenCL.
+        // Can also skip alpha multiplication and assume fully opaque "Rgba".
         let mut img: Cow<RgbImage> = Cow::Borrowed(cell.get_or_init(|| {
             image::open(uf.scaled.path())
                 .unwrap_or_else(|e| panic!("Unable to read image {:?}: {}", uf.scaled.path(), e))
