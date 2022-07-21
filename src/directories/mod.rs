@@ -2,11 +2,10 @@ use std::cmp::max;
 use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::Error;
-use std::os::unix::prelude::OsStrExt;
 use std::path::Path;
 
 use once_cell::sync::Lazy;
-use regex::bytes::Regex;
+use regex::Regex;
 use walkdir::{DirEntry, WalkDir};
 
 use self::ids::OriginalWallpaperID;
@@ -70,33 +69,35 @@ pub fn next_original_in_dir(abs_dir: &Path) -> Option<(OsString, usize, usize)> 
 
     match files.next() {
         Some(f) => {
-            let c = FILE_REGEX.captures(OsStr::as_bytes(f.file_name()?))?;
-            let number = OsStr::from_bytes(&c[3]).to_str()?.parse::<usize>().ok()?;
+            let fname = f.file_name()?.to_string_lossy();
+            let c = FILE_REGEX.captures(&fname)?;
+            let number = c[3].parse::<usize>().ok()?;
             num = number;
             digits = c[3].len();
-            prefix = OsStr::from_bytes(&c[1]).to_os_string();
+            prefix = c[1].to_string();
         }
         None => return Some(("".into(), 0, 2)),
     }
 
     for f in files {
-        let c = FILE_REGEX.captures(f.file_name().map_or(&[], OsStr::as_bytes))?;
-        if OsStr::from_bytes(&c[1]) != prefix {
+        let fname = f.file_name()?.to_string_lossy();
+        let c = FILE_REGEX.captures(&fname)?;
+        if c[1] != prefix {
             return None;
         }
 
-        let number = OsStr::from_bytes(&c[3]).to_str()?.parse::<usize>().ok()?;
+        let number = c[3].parse::<usize>().ok()?;
         num = max(num, number);
         digits = max(digits, c[3].len());
     }
 
     num += 1;
 
-    Some((prefix, num, digits))
+    Some((prefix.into(), num, digits))
 }
 
 // Returns (count, max_digits)
-pub fn next_original_for_prefix(abs_dir: &Path, prefix: &OsString) -> Option<(usize, usize)> {
+pub fn next_original_for_prefix(abs_dir: &Path, prefix: &String) -> Option<(usize, usize)> {
     if !abs_dir.exists() {
         // Default to two digits
         // Corresponds to "install new_dir/prefix*" -> new_dir/prefix00.ext*
@@ -118,12 +119,13 @@ pub fn next_original_for_prefix(abs_dir: &Path, prefix: &OsString) -> Option<(us
         .filter(|p| p.extension().map_or(false, valid_extension));
 
     for f in files {
-        let c = match FILE_REGEX.captures(OsStr::as_bytes(f.file_name()?)) {
-            Some(c) if OsStr::from_bytes(&c[1]) == prefix => c,
+        let fname = f.file_name()?.to_string_lossy();
+        let c = match FILE_REGEX.captures(&fname) {
+            Some(c) if &c[1] == prefix => c,
             Some(_) | None => continue,
         };
 
-        let number = OsStr::from_bytes(&c[3]).to_str()?.parse::<usize>().ok()?;
+        let number = c[3].parse::<usize>().ok()?;
         num = max(num, number + 1);
         digits = max(digits, c[3].len());
     }

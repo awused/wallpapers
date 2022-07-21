@@ -4,7 +4,6 @@ use std::convert::Into;
 use std::ffi::OsStr;
 use std::fs::{copy, create_dir_all};
 use std::num::{NonZeroI32, NonZeroU32};
-use std::os::unix::prelude::OsStrExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
@@ -313,12 +312,12 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
         (None, Some(e)) if dest.as_os_str().to_string_lossy().ends_with('*') => {
             let dir = dest.parent()?;
             let prefix = dest.file_name()?;
-            let mut prefix =
-                OsStr::from_bytes(&prefix.as_bytes()[0..prefix.len() - 1]).to_os_string();
+            let mut prefix = prefix.to_string_lossy()[0..prefix.len() - 1].to_string();
+
             match next_original_for_prefix(dir, &prefix) {
                 Some((n, digits)) => {
-                    prefix.push(format!("{n:0>digits$}."));
-                    prefix.push(e);
+                    prefix.push_str(&format!("{n:0>digits$}."));
+                    prefix.push_str(&e.to_string_lossy());
                     dest = dir.join(prefix);
                 }
                 None => {
