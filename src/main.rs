@@ -11,6 +11,7 @@ use std::fs::{remove_dir, remove_file};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::thread;
 
 use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::{Options, PersistentShuffler};
@@ -180,15 +181,25 @@ fn random() {
     let options = Options::default().keep_unrecognized(true);
     let mut shuffler = Shuffler::new(&CONFIG.database, options, Some(wallpapers)).unwrap();
 
-    let selection = shuffler.try_unique_n(monitors.len()).unwrap().unwrap();
-
+    // https://github.com/rust-lang/rust-clippy/issues/9219
+    #[allow(clippy::needless_collect)]
+    let selection: Vec<_> = shuffler
+        .try_unique_n(monitors.len())
+        .unwrap()
+        .unwrap()
+        .into_iter()
+        .cloned()
+        .collect();
+    let close_handle = thread::spawn(move || {
+        shuffler.close().unwrap();
+    });
 
     // Merge any duplicate wallpapers.
     let mut wids = Vec::new();
     let mut grouped_monitors: Vec<Vec<_>> = Vec::new();
 
     // O(n^2) but the real number of monitors will always be tiny
-    'outer: for (wid, m) in selection.iter().map(|wid| (*wid).clone()).zip(monitors.into_iter()) {
+    'outer: for (wid, m) in selection.into_iter().zip(monitors.into_iter()) {
         for (i, w) in wids.iter().enumerate() {
             if wid == *w {
                 grouped_monitors[i].push(m);
@@ -207,19 +218,15 @@ fn random() {
     assert_eq!(wids.len(), grouped_monitors.len());
     let combined: Vec<_> = wids.iter().zip(grouped_monitors.iter().map(Vec::as_slice)).collect();
 
-
     combined.par_iter().for_each(|(wid, monitors)| {
         Wallpaper::new(*wid, *monitors, &tdir).process(true);
     });
-
 
     if !closing::closed() {
         monitors::set_wallpapers(combined.as_slice(), false);
     }
 
-    // We could close the shuffler earlier but this acts as a de-facto lock preventing other
-    // instances from running.
-    shuffler.close().unwrap();
+    close_handle.join().unwrap();
 }
 
 fn sync(clean_monitors: bool) {

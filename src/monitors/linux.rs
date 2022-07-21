@@ -1,15 +1,18 @@
 use core::slice;
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ffi::{c_void, CString};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{env, mem, ptr};
 
+use futures::executor::block_on;
+use futures::stream::FuturesUnordered;
+use futures::{StreamExt, TryFutureExt};
 use image::RgbaImage;
 use lru::LruCache;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
-use x11::{xlib, xrandr};
+use tokio::sync::oneshot;
+use x11::{xinerama, xlib, xrandr};
 
 use crate::directories::ids::WallpaperID;
 use crate::wallpaper::OPTIMISTIC_CACHE;
@@ -50,9 +53,35 @@ pub fn list() -> Vec<Monitor> {
             return Vec::new();
         }
 
+
         let screen = XDefaultScreen(dpy);
         let root = XRootWindow(dpy, screen);
 
+        // Xinerama is much faster, but doesn't always work. Maybe if the GPU is asleep?
+        let mut num: i32 = 0;
+        let xinerama_info = xinerama::XineramaQueryScreens(dpy, ptr::addr_of_mut!(num));
+        if xinerama_info.is_null() || num <= 0 {
+            if !xinerama_info.is_null() {
+                XFree(xinerama_info as _);
+            }
+        } else {
+            let monitors = slice::from_raw_parts(xinerama_info, num as usize)
+                .iter()
+                .map(|si| Monitor {
+                    width: si.width as u32,
+                    height: si.height as u32,
+                    top: si.y_org as i32,
+                    left: si.x_org as i32,
+                })
+                .collect();
+
+            XFree(xinerama_info as _);
+            XCloseDisplay(dpy);
+            return monitors;
+        }
+
+
+        // Try XRandR as a fallback.
         let resources = XRRGetScreenResources(dpy, root);
 
         let mut monitors = Vec::new();
@@ -76,7 +105,6 @@ pub fn list() -> Vec<Monitor> {
             XRRFreeOutputInfo(info);
         }
         XRRFreeScreenResources(resources);
-
         XCloseDisplay(dpy);
 
         monitors
@@ -89,20 +117,21 @@ pub fn supports_memory_papers() -> bool {
     IS_X.load(Ordering::Relaxed)
 }
 
-fn create_x_image(img: &RgbaImage, dpy: *mut xlib::_XDisplay) -> *mut xlib::XImage {
+#[derive(Debug)]
+struct MallocedImage(*mut i8, u32, u32);
+unsafe impl Send for MallocedImage {}
+
+fn malloc_image_buf(img: &RgbaImage) -> MallocedImage {
     let (w, h) = img.dimensions();
     let raw_img = img.as_raw();
     let size = mem::size_of_val(&raw_img[0]) * raw_img.len();
 
     unsafe {
-        use xlib::*;
-
         let buf = libc::malloc(size) as *mut i8;
         assert!(!buf.is_null(), "Failed to allocate image buffer.");
-        buf.copy_from_nonoverlapping(raw_img.as_ptr() as *const i8, size);
+        buf.copy_from_nonoverlapping(raw_img.as_ptr() as _, size);
 
-
-        XCreateImage(dpy, CopyFromParent as *mut Visual, 24, ZPixmap, 0, buf, w, h, 32, 0)
+        MallocedImage(buf, w, h)
     }
 }
 
@@ -206,7 +235,7 @@ fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
 }
 
 fn set_x_wallpapers(
-    wallpapers: &[(&&impl WallpaperID, &Monitor)],
+    wallpapers: HashMap<PathBuf, Vec<&Monitor>>,
     cache: &LruCache<PathBuf, RgbaImage>,
 ) {
     let display = if let Ok(d) = env::var("DISPLAY") {
@@ -218,114 +247,131 @@ fn set_x_wallpapers(
 
     let display = CString::new(display).unwrap();
 
+    rayon::in_place_scope(|scope| {
+        let image_futures = wallpapers.into_iter().map(|(p, ms)| {
+            let (send, recv) = oneshot::channel::<MallocedImage>();
 
-    // Load all uncached wallpapers and convert each one into an XImage.
-    let unloaded: HashSet<_> = wallpapers
-        .iter()
-        .filter_map(|(w, m)| {
-            let p = w.cached_abs_path(m, &w.get_props(m));
-            (!cache.contains(&p)).then_some(p)
-        })
-        .collect();
-    let loaded_map: HashMap<_, _> = unloaded
-        .into_par_iter()
-        .map(|p| {
-            let mut img = image::open(&p).unwrap().into_rgba8();
-            img.chunks_exact_mut(4).for_each(|c| c.swap(0, 2));
-            (p, img)
-        })
-        .collect();
+            scope.spawn(move |_| {
+                let mi = if let Some(cached) = cache.peek(&p) {
+                    malloc_image_buf(cached)
+                } else {
+                    let mut img = image::open(&p).unwrap().into_rgba8();
+                    img.chunks_exact_mut(4).for_each(|c| c.swap(0, 2));
+                    malloc_image_buf(&img)
+                };
+                send.send(mi).unwrap();
+            });
 
-    let get_bgra = |p: &PathBuf| cache.peek(p).unwrap_or_else(|| loaded_map.get(p).unwrap());
-
-    unsafe {
-        use xlib::*;
-
-        let dpy = XOpenDisplay(display.as_ptr());
-        assert!(!dpy.is_null(), "Failed to open X session {:?}", display);
-
-        let screen = XDefaultScreen(dpy);
-        let (sw, sh) = (XDisplayWidth(dpy, screen), XDisplayHeight(dpy, screen));
-        let root = XRootWindow(dpy, screen);
-
-        let mut count = 0;
-        let depths = XListDepths(dpy, screen, &mut count);
-        let has_24 = !depths.is_null()
-            && count > 0
-            && slice::from_raw_parts(depths, count as usize).contains(&24);
-        if !depths.is_null() {
-            XFree(depths as *mut c_void);
-        }
-
-        if !has_24 {
-            XCloseDisplay(dpy);
-            panic!("Could not get desired depth of 24");
-        }
-        let depth = 24;
-
-
-        XSync(dpy, 0);
-
-        // Black rectangle is probably unnecessary, but so cheap it's fine as a failsafe.
-        let pm = XCreatePixmap(dpy, root, sw as u32, sh as u32, depth as u32);
-        let gc = XCreateGC(dpy, pm, 0, ptr::null_mut());
-        XSetForeground(dpy, gc, XBlackPixel(dpy, screen));
-        XFillRectangle(dpy, pm, gc, 0, 0, sw as u32, sh as u32);
-
-
-        let mut ximgs = HashMap::new();
-
-        for (w, m) in wallpapers {
-            let p = w.cached_abs_path(m, &w.get_props(m));
-            let ximg = match ximgs.entry(p) {
-                Entry::Occupied(o) => *o.into_mut(),
-                Entry::Vacant(v) => {
-                    let ximg = create_x_image(get_bgra(v.key()), dpy);
-                    *v.insert(ximg)
-                }
-            };
-
-            XPutImage(
-                dpy,
-                pm,
-                gc,
-                ximg,
-                0,
-                0,
-                m.left as i32,
-                m.top as i32,
-                (*ximg).width as u32,
-                (*ximg).height as u32,
-            );
-        }
-
-        ximgs.into_values().for_each(|ximg| {
-            XDestroyImage(ximg);
+            (ms, recv)
         });
 
-        set_x_atoms(dpy, root, pm);
+        unsafe {
+            use xlib::*;
 
-        XSetWindowBackgroundPixmap(dpy, root, pm);
-        XClearWindow(dpy, root);
-        XFlush(dpy);
-        XFreeGC(dpy, gc);
-        XSetCloseDownMode(dpy, RetainPermanent);
+            let dpy = XOpenDisplay(display.as_ptr());
+            assert!(!dpy.is_null(), "Failed to open X session {:?}", display);
 
-        XCloseDisplay(dpy);
-    }
+            let screen = XDefaultScreen(dpy);
+            let (sw, sh) = (XDisplayWidth(dpy, screen), XDisplayHeight(dpy, screen));
+            let root = XRootWindow(dpy, screen);
+
+            let mut count = 0;
+            let depths = XListDepths(dpy, screen, &mut count);
+            let has_24 = !depths.is_null()
+                && count > 0
+                && slice::from_raw_parts(depths, count as usize).contains(&24);
+            if !depths.is_null() {
+                XFree(depths as *mut c_void);
+            }
+
+            if !has_24 {
+                XCloseDisplay(dpy);
+                panic!("Could not get desired depth of 24");
+            }
+            let depth = 24;
+
+
+            XSync(dpy, 0);
+
+            // Black rectangle is probably unnecessary, but so cheap it's fine as a failsafe.
+            let pm = XCreatePixmap(dpy, root, sw as u32, sh as u32, depth as u32);
+            let gc = XCreateGC(dpy, pm, 0, ptr::null_mut());
+            XSetForeground(dpy, gc, XBlackPixel(dpy, screen));
+            XFillRectangle(dpy, pm, gc, 0, 0, sw as u32, sh as u32);
+
+
+            let draw_each = image_futures.map(|(ms, recv)| {
+                recv.map_ok(|mi| {
+                    let MallocedImage(buf, w, h) = mi;
+                    // Not thread safe, but almost instant.
+                    let ximg = XCreateImage(
+                        dpy,
+                        CopyFromParent as *mut Visual,
+                        24,
+                        ZPixmap,
+                        0,
+                        buf,
+                        w,
+                        h,
+                        32,
+                        0,
+                    );
+
+                    for m in ms {
+                        XPutImage(
+                            dpy,
+                            pm,
+                            gc,
+                            ximg,
+                            0,
+                            0,
+                            m.left as i32,
+                            m.top as i32,
+                            (*ximg).width as u32,
+                            (*ximg).height as u32,
+                        );
+                    }
+
+                    XDestroyImage(ximg);
+                })
+            });
+
+            let unordered = FuturesUnordered::from_iter(draw_each);
+
+            // Single threaded executor, no risk of X calls from other threads.
+            block_on(unordered.collect::<Vec<_>>());
+
+            set_x_atoms(dpy, root, pm);
+
+            XSetWindowBackgroundPixmap(dpy, root, pm);
+            XClearWindow(dpy, root);
+            XFlush(dpy);
+            XFreeGC(dpy, gc);
+            XSetCloseDownMode(dpy, RetainPermanent);
+
+            XCloseDisplay(dpy);
+        }
+    });
 }
 
 pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], temp: bool) {
-    let x: Vec<_> = wallpapers
-        .iter()
-        .flat_map(move |(wid, ms)| ms.iter().map(move |m| (wid, m)))
-        .collect();
+    let mut paths_monitors = HashMap::new();
+    for (wid, ms) in wallpapers {
+        for m in *ms {
+            let p = wid.cached_abs_path(m, &wid.get_props(m));
+            match paths_monitors.entry(p) {
+                Entry::Vacant(v) => v.insert(Vec::new()).push(m),
+                Entry::Occupied(mut e) => e.get_mut().push(m),
+            }
+        }
+    }
 
     if IS_X.load(Ordering::Relaxed) {
+        // Load all uncached wallpapers and convert each one into an XImage.
         if let Some(cache) = OPTIMISTIC_CACHE.get() {
-            set_x_wallpapers(&x, &*cache.lock().unwrap());
+            set_x_wallpapers(paths_monitors, &*cache.lock().unwrap());
         } else {
-            set_x_wallpapers(&x, &LruCache::new(0));
+            set_x_wallpapers(paths_monitors, &LruCache::new(0));
         }
 
         if !temp {

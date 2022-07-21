@@ -128,15 +128,14 @@ impl<'a, T: WallpaperID> Wallpaper<'a, T> {
 
 impl<T: WallpaperID> Wallpaper<'_, T> {
     pub fn process(&self, compress: bool) {
-        let r = self.get_resolution();
-        if r.is_empty() {
-            println!("Image {:?} is empty", self.id.original_abs_path());
-            return;
-        }
-
         let uncached_monitors = self.get_uncached_files();
 
         if uncached_monitors.is_empty() {
+            return;
+        }
+
+        if self.get_resolution().is_empty() {
+            println!("Image {:?} is empty", self.id.original_abs_path());
             return;
         }
 
@@ -182,6 +181,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         let mut input = image::open(self.id.original_abs_path()).unwrap_or_else(|e| {
             panic!("Unable to read image {:?}: {}", self.id.original_abs_path(), e)
         });
+
         let props = uf.props.as_ref().expect("Impossible");
         let output_file = uf.cropped.as_ref().expect("Impossible").path();
 
@@ -437,7 +437,11 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         *self.resolution.get_or_init(|| {
             image::image_dimensions(self.id.original_abs_path())
                 .unwrap_or_else(|_| {
-                    panic!("Unable to read resolution of image {:?}", self.id.original_abs_path())
+                    println!(
+                        "Unable to read resolution of image {:?}",
+                        self.id.original_abs_path()
+                    );
+                    (0, 0)
                 })
                 .into()
         })

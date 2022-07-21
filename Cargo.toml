@@ -18,6 +18,7 @@ aw-upscale = { git = "https://github.com/awused/aw-upscale" }
 clap = { version = "3.2.12", features = ["derive"] }
 crossbeam-utils = "0.8.10"
 dialoguer = { version = "0.10.1", default-features = false, features = [ "history" ] }
+futures = "0.3.21"
 image = { version = "0.24.2", default-features = false, features = [ "jpeg", "png", "bmp" ] }
 lru = { version = "0.7.7", default-features = false }
 num_cpus = "1.13.1"
