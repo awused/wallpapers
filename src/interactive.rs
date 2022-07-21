@@ -4,6 +4,7 @@ use std::convert::Into;
 use std::ffi::OsStr;
 use std::fs::{copy, create_dir_all};
 use std::num::{NonZeroI32, NonZeroU32};
+use std::os::unix::prelude::OsStrExt;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
@@ -18,7 +19,8 @@ use tokio::sync::mpsc;
 use tokio::time::{interval, MissedTickBehavior};
 
 use crate::config::{load_properties, string_to_colour, ImageProperties, Properties, CONFIG};
-use crate::directories::ids::{TempWallpaperID, WallpaperID};
+use crate::directories::ids::{relative_from_slash, TempWallpaperID, WallpaperID};
+use crate::directories::{next_original_for_prefix, next_original_in_dir, valid_extension};
 use crate::monitors::set_wallpapers;
 use crate::wallpaper::{Wallpaper, OPTIMISTIC_CACHE};
 use crate::{closing, make_tdir, monitors};
@@ -199,6 +201,7 @@ pub async fn run(starting_path: &Path) {
                 }
                 Command::Denoise(d) => props.denoise = if d != 1 { Some(d) } else { None },
                 Command::Install(rel, res) => {
+                    let rel = relative_from_slash(rel);
                     if let Some(new_path) = install(rel, &wid.original_abs_path()) {
                         wid.set_original_path(new_path);
                         if !props.is_empty() {
@@ -247,7 +250,7 @@ pub async fn run(starting_path: &Path) {
     }
 }
 
-fn install(rel: String, original: &Path) -> Option<PathBuf> {
+fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
     if original.starts_with(&CONFIG.originals_directory) {
         // TODO -- could this be used for renaming?
         // Need to handle moving any existing properties, or leave them for manual cleanup.
@@ -255,52 +258,119 @@ fn install(rel: String, original: &Path) -> Option<PathBuf> {
         return None;
     }
 
-    let rel: PathBuf = rel.into();
     if rel.is_absolute() {
         println!("Install path must be relative.");
         return None;
     }
 
-    match (
-        rel.extension().map(OsStr::to_ascii_lowercase),
-        original.extension().map(OsStr::to_ascii_lowercase),
-    ) {
-        (Some(a), Some(b)) if a == b => (),
-        (_, Some(b)) => {
-            println!("New extension doesn't match old extension, should be {:?}", b);
-            return None;
-        }
-        _ => (),
-    }
+    let mut dest = normalize_path(&CONFIG.originals_directory.join(rel));
 
-    let new_path = normalize_path(&CONFIG.originals_directory.join(rel));
-
-    if !new_path.starts_with(&CONFIG.originals_directory) {
+    if !dest.starts_with(&CONFIG.originals_directory) {
         println!("Cannot install file outside of the originals directory.");
         return None;
     }
 
-    if new_path.exists() {
-        println!("File {:?} already exists.", new_path);
+    match (
+        dest.extension().map(OsStr::to_ascii_lowercase),
+        original.extension().map(OsStr::to_ascii_lowercase),
+    ) {
+        (Some(a), Some(b)) if a == "*" && valid_extension(&b) => {
+            dest.set_extension(b);
+        }
+        (_, Some(e)) | (Some(e), None) if !valid_extension(&e) => {
+            println!("Extension {e:?} is not valid for an original wallpaper, unable to install.");
+            return None;
+        }
+        (Some(a), Some(b)) if a == b => {}
+        // Empty file name, like when the user types "existing_or_new_dir/"
+        (None, Some(e)) if dest.file_name().map_or(true, |n| n == "*") => {
+            let dir = dest.parent()?;
+            match next_original_in_dir(dir) {
+                Some((mut p, n, digits)) => {
+                    p.push(format!("{n:0>digits$}."));
+                    p.push(e);
+                    dest = dir.join(p);
+                }
+                None => {
+                    println!("Could not determine name for next file in {dir:?}");
+                    return None;
+                }
+            }
+        }
+        // No file name, but matches a directory, like when the user types "existing_dir"
+        (None, Some(e)) if dest.is_dir() => match next_original_in_dir(&dest) {
+            Some((mut p, n, digits)) => {
+                p.push(format!("{n:0>digits$}."));
+                p.push(e);
+                dest = dest.join(p);
+            }
+            None => {
+                println!("Could not determine name for next file in {dest:?}");
+                return None;
+            }
+        },
+        // Could skip conversion, unlikely to matter in practice
+        (None, Some(e)) if dest.as_os_str().to_string_lossy().ends_with('*') => {
+            let dir = dest.parent()?;
+            let prefix = dest.file_name()?;
+            let mut prefix =
+                OsStr::from_bytes(&prefix.as_bytes()[0..prefix.len() - 1]).to_os_string();
+            match next_original_for_prefix(dir, &prefix) {
+                Some((n, digits)) => {
+                    prefix.push(format!("{n:0>digits$}."));
+                    prefix.push(e);
+                    dest = dir.join(prefix);
+                }
+                None => {
+                    println!(
+                        "Could not determine name for next file in {dir:?} starting with \
+                         {prefix:?}"
+                    );
+                    return None;
+                }
+            }
+        }
+        (_, Some(b)) => {
+            println!("New extension doesn't match old extension, should be {:?}", b);
+            return None;
+        }
+        (None, _) => {
+            // TODO -- auto-number if wildcard
+            println!("Can't install file without an extension");
+            return None;
+        }
+        (Some(_), None) => {}
+    }
+
+    if !dest.starts_with(&CONFIG.originals_directory) {
+        // This should never happen, but check to be certain.
+        println!(
+            "Cannot install file outside of the originals directory. This should never happen."
+        );
+        return None;
+    }
+
+    if dest.exists() {
+        println!("File {:?} already exists.", dest);
         return None;
     }
 
     // We already know the originals_directory must exist, and new_path must have a parent
-    if let Err(e) = create_dir_all(new_path.parent().unwrap()) {
+    if let Err(e) = create_dir_all(dest.parent().unwrap()) {
         println!("Error creating directories: {}", e);
         return None;
     }
 
     // Try moving first, fall back to copy, never delete
-    if std::fs::rename(&original, &new_path).is_ok() {
-        println!("Installed wallpaper to {:?}", new_path);
-        return Some(new_path);
+    if std::fs::rename(&original, &dest).is_ok() {
+        println!("Installed wallpaper to {:?}", dest);
+        return Some(dest);
     }
 
-    match std::fs::copy(original, &new_path) {
+    match std::fs::copy(original, &dest) {
         Ok(_) => {
-            println!("Installed wallpaper to {:?}, did not delete {:?}", new_path, original);
-            Some(new_path)
+            println!("Installed wallpaper to {:?}, did not delete {:?}", dest, original);
+            Some(dest)
         }
         Err(e) => {
             println!("Failed to install file: {}", e);

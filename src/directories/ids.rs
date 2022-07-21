@@ -140,6 +140,8 @@ impl<'a> TempWallpaperID<'a> {
 
     // Used for install in interactive mode
     pub fn set_original_path(&self, p: PathBuf) {
+        assert!(p.is_absolute());
+        assert!(p.starts_with(&CONFIG.originals_directory));
         *self.path.write().unwrap() = p;
     }
 
@@ -227,7 +229,7 @@ fn slash_from_relative<P: AsRef<Path>>(p: P) -> PathBuf {
     }
 }
 
-fn relative_from_slash<P: AsRef<Path>>(p: P) -> PathBuf {
+pub fn relative_from_slash<P: AsRef<Path>>(p: P) -> PathBuf {
     #[cfg(unix)]
     return p.as_ref().to_owned();
     #[cfg(windows)]

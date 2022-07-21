@@ -1,5 +1,12 @@
+use std::cmp::max;
+use std::ffi::{OsStr, OsString};
+use std::fs;
 use std::io::Error;
+use std::os::unix::prelude::OsStrExt;
+use std::path::Path;
 
+use once_cell::sync::Lazy;
+use regex::bytes::Regex;
 use walkdir::{DirEntry, WalkDir};
 
 use self::ids::OriginalWallpaperID;
@@ -7,8 +14,15 @@ use crate::config::CONFIG;
 
 pub mod ids;
 
+static FILE_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^((.*\D)?)(\d+)\.[a-zA-Z]{3,4}$").unwrap());
+
 static EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "png", "bmp"];
 
+pub fn valid_extension(ext: &OsStr) -> bool {
+    // While there are only a few extensions this is faster than hashing.
+    EXTENSIONS.iter().any(|e| ext.eq_ignore_ascii_case(OsStr::new(e)))
+}
 
 // Gets all the originals as forward slash separated relative paths
 pub fn get_all_originals() -> Result<Vec<OriginalWallpaperID>, Error> {
@@ -20,17 +34,7 @@ pub fn get_all_originals() -> Result<Vec<OriginalWallpaperID>, Error> {
         .into_iter()
         .map(DirEntry::into_path)
         .filter(|p| p.is_file())
-        .filter(|p| {
-            if let Some(ext) = p.extension() {
-                let ext = ext.to_string_lossy();
-                for e in EXTENSIONS {
-                    if ext.eq_ignore_ascii_case(e) {
-                        return true;
-                    }
-                }
-            }
-            false
-        })
+        .filter(|p| p.extension().map_or(false, valid_extension))
         .map(|p| {
             OriginalWallpaperID::from_rel_path(
                 p.strip_prefix(&CONFIG.originals_directory)
@@ -38,4 +42,95 @@ pub fn get_all_originals() -> Result<Vec<OriginalWallpaperID>, Error> {
             )
         })
         .collect())
+}
+
+// Returns (prefix, count, max_digits)
+// Only returns if the directory is empty or contains all files matching the same prefix
+pub fn next_original_in_dir(abs_dir: &Path) -> Option<(OsString, usize, usize)> {
+    if !abs_dir.exists() {
+        // Default to two digits
+        // Corresponds to "install new_or_empty_dir/*" -> new_or_empty_dir/00.ext
+        return Some(("".into(), 0, 2));
+    }
+
+    if !abs_dir.is_dir() {
+        return None;
+    }
+
+    let mut files = fs::read_dir(&abs_dir)
+        .ok()?
+        .flatten()
+        .map(|de| de.path())
+        .filter(|p| p.is_file())
+        .filter(|p| p.extension().map_or(false, valid_extension));
+
+    let mut num;
+    let mut digits;
+    let prefix;
+
+    match files.next() {
+        Some(f) => {
+            let c = FILE_REGEX.captures(OsStr::as_bytes(f.file_name()?))?;
+            let number = OsStr::from_bytes(&c[3]).to_str()?.parse::<usize>().ok()?;
+            num = number;
+            digits = c[3].len();
+            prefix = OsStr::from_bytes(&c[1]).to_os_string();
+        }
+        None => return Some(("".into(), 0, 2)),
+    }
+
+    for f in files {
+        let c = FILE_REGEX.captures(f.file_name().map_or(&[], OsStr::as_bytes))?;
+        if OsStr::from_bytes(&c[1]) != prefix {
+            return None;
+        }
+
+        let number = OsStr::from_bytes(&c[3]).to_str()?.parse::<usize>().ok()?;
+        num = max(num, number);
+        digits = max(digits, c[3].len());
+    }
+
+    num += 1;
+
+    Some((prefix, num, digits))
+}
+
+// Returns (count, max_digits)
+pub fn next_original_for_prefix(abs_dir: &Path, prefix: &OsString) -> Option<(usize, usize)> {
+    if !abs_dir.exists() {
+        // Default to two digits
+        // Corresponds to "install new_dir/prefix*" -> new_dir/prefix00.ext*
+        return Some((0, 2));
+    }
+
+    if !abs_dir.is_dir() {
+        return None;
+    }
+
+    let mut num = 0;
+    let mut digits = 0;
+
+    let files = fs::read_dir(&abs_dir)
+        .ok()?
+        .flatten()
+        .map(|de| de.path())
+        .filter(|p| p.is_file())
+        .filter(|p| p.extension().map_or(false, valid_extension));
+
+    for f in files {
+        let c = match FILE_REGEX.captures(OsStr::as_bytes(f.file_name()?)) {
+            Some(c) if OsStr::from_bytes(&c[1]) == prefix => c,
+            Some(_) | None => continue,
+        };
+
+        let number = OsStr::from_bytes(&c[3]).to_str()?.parse::<usize>().ok()?;
+        num = max(num, number + 1);
+        digits = max(digits, c[3].len());
+    }
+
+    if digits == 0 {
+        digits = 2;
+    }
+
+    Some((num, digits))
 }
