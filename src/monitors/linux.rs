@@ -15,6 +15,7 @@ use tokio::sync::oneshot;
 use x11::{xinerama, xlib, xrandr};
 
 use crate::directories::ids::WallpaperID;
+use crate::processing::WORKER;
 use crate::wallpaper::OPTIMISTIC_CACHE;
 
 static IS_X: AtomicBool = AtomicBool::new(false);
@@ -247,7 +248,7 @@ fn set_x_wallpapers(
 
     let display = CString::new(display).unwrap();
 
-    rayon::in_place_scope(|scope| {
+    WORKER.in_place_scope(|scope| {
         let image_futures = wallpapers.into_iter().map(|(p, ms)| {
             let (send, recv) = oneshot::channel::<MallocedImage>();
 
