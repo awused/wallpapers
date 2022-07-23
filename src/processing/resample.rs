@@ -19,6 +19,7 @@ mod opencl {
         image: &[u8],
         current_res: Res,
         target_res: Res,
+        translation: (i64, i64),
         channels: u8,
     ) -> ocl::Result<Vec<u8>> {
         let mut pro_que = OPENCL_QUEUE.clone();
@@ -61,6 +62,7 @@ mod opencl {
             .arg(Int2::new(current_res.w as _, current_res.h as _))
             .arg(&int_image)
             .arg(Int2::new(current_res.w as _, target_res.h as _))
+            .arg(translation.1)
             .arg(channels)
             .build()?;
 
@@ -71,6 +73,7 @@ mod opencl {
             .arg(Int2::new(current_res.w as _, target_res.h as _))
             .arg(&dst_image)
             .arg(Int2::new(target_res.w as _, target_res.h as _))
+            .arg(translation.0)
             .arg(channels)
             .build()?;
 
@@ -293,33 +296,43 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
     image: Vec<f32>,
     current_dims: (u32, u32),
     new_width: u32,
+    translation: i64,
     kernel: K,
 ) -> Vec<u8> {
+    println!("called horizontal");
     let (width, height) = current_dims;
 
     let ratio = width as f32 / new_width as f32;
+    let dst_translation = translation as f32 / ratio;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
     let src_support = S as f32 * sratio;
 
     // Create a rotated image and fix it later
-    let mut out = vec![0; height as usize * new_width as usize * N];
+    let mut out = vec![255; height as usize * new_width as usize * N];
 
-    out.chunks_exact_mut(height as usize * N).enumerate().par_bridge().for_each(
+    out.chunks_exact_mut(height as usize * N).enumerate()
+        // Skip any columns that fall "outside" the original image.
+        // This keeps a "hard" edge on the image.
+        .skip(f32::max((-dst_translation).ceil(), 0.0) as usize)
+        .take_while(|(outx, _)| {
+            (new_width as usize)
+                .saturating_sub(f32::max(dst_translation.ceil(), 0.0) as usize)
+                > *outx
+        })
+        .par_bridge().for_each(
         |(outx, outcol)| {
             // Find the point in the input image corresponding to the centre
             // of the current pixel in the output image.
-            let inputx = (outx as f32 + 0.5) * ratio;
+            let inputx = (outx as f32 + 0.5) * ratio + translation as f32;
 
             // Left and right are slice bounds for the input pixels relevant
             // to the output pixel we are calculating.  Pixel x is relevant
             // if and only if (x >= left) && (x < right).
 
-            // Invariant: 0 <= left < right <= width
-
             let left = (inputx - src_support).floor() as i64;
-            let left = left.clamp(0, width as i64 - 1) as u32;
-
             let right = (inputx + src_support).ceil() as i64;
+
+            let left = left.clamp(0, width as i64 - 1) as u32;
             let right = right.clamp(left as i64 + 1, width as i64) as u32;
 
             // Go back to left boundary of pixel, to properly compare with i
@@ -332,6 +345,9 @@ fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Syn
                 let w = kernel((i as f32 - inputx) / sratio);
                 ws.push(w);
                 sum += w;
+            }
+            if sum == 0.0 {
+                return;
             }
             ws.iter_mut().for_each(|w| *w /= sum);
 
@@ -407,28 +423,40 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
     image: &[u8],
     current_res: Res,
     new_height: u32,
+    translation: i64,
     kernel: K,
 ) -> Vec<f32> {
     let (width, height) = (current_res.w, current_res.h);
 
     let ratio = height as f32 / new_height as f32;
+    let dst_translation = translation as f32 / ratio;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
     let src_support = S as f32 * sratio;
 
-    let mut out = vec![0.0; width as usize * new_height as usize * N];
+    let mut out = vec![1.0; width as usize * new_height as usize * N];
 
     out.chunks_exact_mut(width as usize * N)
         .enumerate()
+        // Skip any rows that fall "outside" the original image.
+        // This keeps a "hard" edge on the image.
+        .skip(f32::max(dst_translation.ceil(), 0.0) as usize)
+        .take_while(|(outy, _)| {
+            (new_height as usize)
+                .saturating_sub(f32::max((-dst_translation).ceil(), 0.0) as usize)
+                > *outy
+        })
         .par_bridge()
         .for_each(|(outy, outrow)| {
+            // Force the same hard cutoff that translating before scaling has
+
             // For an explanation of this algorithm, see the comments
             // in horizontal_sample.
-            let inputy = (outy as f32 + 0.5) * ratio;
+            let inputy = (outy as f32 + 0.5) * ratio - translation as f32;
 
             let left = (inputy - src_support).floor() as i64;
-            let left = left.clamp(0, height as i64 - 1) as u32;
-
             let right = (inputy + src_support).ceil() as i64;
+
+            let left = left.clamp(0, height as i64 - 1) as u32;
             let right = right.clamp(left as i64 + 1, height as i64) as u32;
 
             let inputy = inputy - 0.5;
@@ -439,6 +467,9 @@ fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>
                 let w = kernel((i as f32 - inputy) / sratio);
                 ws.push(w);
                 sum += w;
+            }
+            if sum == 0.0 {
+                return;
             }
             ws.iter_mut().for_each(|w| *w /= sum);
 
@@ -496,57 +527,89 @@ pub fn resize_par_linear<const N: usize>(
     image: &[u8],
     current_res: Res,
     target_res: Res,
+    translation: (i64, i64),
     filter: FilterType,
 ) -> Vec<u8> {
     assert!(current_res.w as usize * current_res.h as usize * N == image.len());
 
     match filter {
         FilterType::Nearest => {
-            let vert = vertical_par_sample::<N, 0, _>(image, current_res, target_res.h, box_kernel);
+            let vert = vertical_par_sample::<N, 0, _>(
+                image,
+                current_res,
+                target_res.h,
+                translation.1,
+                box_kernel,
+            );
             horizontal_par_sample::<N, 0, _>(
                 vert,
                 (current_res.w, target_res.h),
                 target_res.w,
+                translation.0,
                 box_kernel,
             )
         }
         FilterType::Triangle => {
-            let vert =
-                vertical_par_sample::<N, 1, _>(image, current_res, target_res.h, triangle_kernel);
+            let vert = vertical_par_sample::<N, 1, _>(
+                image,
+                current_res,
+                target_res.h,
+                translation.1,
+                triangle_kernel,
+            );
             horizontal_par_sample::<N, 1, _>(
                 vert,
                 (current_res.w, target_res.h),
                 target_res.w,
+                translation.0,
                 triangle_kernel,
             )
         }
         FilterType::CatmullRom => {
-            let vert =
-                vertical_par_sample::<N, 2, _>(image, current_res, target_res.h, catmullrom_kernel);
+            let vert = vertical_par_sample::<N, 2, _>(
+                image,
+                current_res,
+                target_res.h,
+                translation.1,
+                catmullrom_kernel,
+            );
             horizontal_par_sample::<N, 2, _>(
                 vert,
                 (current_res.w, target_res.h),
                 target_res.w,
+                translation.0,
                 catmullrom_kernel,
             )
         }
         FilterType::Gaussian => {
-            let vert =
-                vertical_par_sample::<N, 3, _>(image, current_res, target_res.h, gaussian_kernel);
+            let vert = vertical_par_sample::<N, 3, _>(
+                image,
+                current_res,
+                target_res.h,
+                translation.1,
+                gaussian_kernel,
+            );
             horizontal_par_sample::<N, 3, _>(
                 vert,
                 (current_res.w, target_res.h),
                 target_res.w,
+                translation.0,
                 gaussian_kernel,
             )
         }
         FilterType::Lanczos3 => {
-            let vert =
-                vertical_par_sample::<N, 3, _>(image, current_res, target_res.h, lanczos3_kernel);
+            let vert = vertical_par_sample::<N, 3, _>(
+                image,
+                current_res,
+                target_res.h,
+                translation.1,
+                lanczos3_kernel,
+            );
             horizontal_par_sample::<N, 3, _>(
                 vert,
                 (current_res.w, target_res.h),
                 target_res.w,
+                translation.0,
                 lanczos3_kernel,
             )
         }

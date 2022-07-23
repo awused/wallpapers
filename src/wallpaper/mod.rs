@@ -1,11 +1,11 @@
 use std::borrow::Cow;
-use std::cmp::min;
+use std::cmp::{max, min};
 use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
 use std::num::NonZeroU8;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 
 use aw_upscale::Upscaler;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -313,13 +313,22 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                 .into_rgb8()
         }));
 
-        if let Some(ImageProperties { vertical, horizontal, .. }) = uf.props.as_ref() {
-            if vertical.is_some() || horizontal.is_some() {
-                img = translate_image(img, vertical, horizontal);
-            }
-        }
+        let (v_off, h_off) =
+            if let Some(ImageProperties { vertical, horizontal, .. }) = uf.props.as_ref() {
+                (
+                    vertical.map_or(0.0, |v| v / 100.0 * img.height() as f64).round() as i64,
+                    horizontal.map_or(0.0, |h| h / 100.0 * img.width() as f64).round() as i64,
+                )
+            } else {
+                (0, 0)
+            };
+
+        println!("{v_off}, {h_off}");
+
+        let start = Instant::now();
 
         let (m_w, m_h) = (uf.m.width, uf.m.height);
+        println!("start {:?}", start.elapsed());
 
         if img.width() != m_w && img.height() != m_h {
             let ratio = f64::max(m_w as f64 / img.width() as f64, m_h as f64 / img.height() as f64);
@@ -336,23 +345,34 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                     img.as_raw(),
                     img.dimensions().into(),
                     (int_w, int_h).into(),
+                    (h_off, v_off),
                     Lanczos3,
                 )
             } else {
-                resize_opencl(img.as_raw(), img.dimensions().into(), (int_w, int_h).into(), 3)
-                    .unwrap()
+                resize_opencl(
+                    img.as_raw(),
+                    img.dimensions().into(),
+                    (int_w, int_h).into(),
+                    (h_off, v_off),
+                    3,
+                )
+                .unwrap()
             };
+            println!("done {:?}", start.elapsed());
 
             #[cfg(not(feature = "opencl"))]
             let resized = resize_par_linear::<3>(
                 img.as_raw(),
                 img.dimensions().into(),
                 (int_w, int_h).into(),
+                (h_off, v_off),
                 Lanczos3,
             );
 
 
             img = Cow::Owned(RgbImage::from_vec(int_w, int_h, resized).unwrap());
+        } else if v_off != 0 || h_off != 0 {
+            img = translate_image(img, v_off, h_off);
         }
 
         if img.width() != m_w || img.width() != m_h {
@@ -367,6 +387,8 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                 )
                 .to_image(),
             );
+
+            println!("crop {:?}", start.elapsed());
         }
 
         if compress || OPTIMISTIC_CACHE.get().is_none() {
@@ -495,33 +517,14 @@ fn get_mtime<P: AsRef<Path>>(p: P) -> SystemTime {
         .unwrap_or_else(|_| panic!("Could not read modification time of file {:?}", p.as_ref()))
 }
 
-fn translate_image<'a>(
-    img: Cow<'a, RgbImage>,
-    vertical: &Option<f64>,
-    horizontal: &Option<f64>,
-) -> Cow<'a, RgbImage> {
+fn translate_image(img: Cow<'_, RgbImage>, vertical: i64, horizontal: i64) -> Cow<'_, RgbImage> {
     static CHANNELS: usize = 3;
-
-    let (v, h) = (vertical.unwrap_or(0.0), horizontal.unwrap_or(0.0));
 
     let (width, height) = (img.width() as usize, img.height() as usize);
 
-    let (inset_left, margin_left) = if h < 0.0 {
-        (0, (h / -100.0 * (width as f64)).round() as usize)
-    } else {
-        ((h / 100.0 * (width as f64)).round() as usize, 0)
-    };
+    let (inset_left, margin_left) = (max(0, horizontal) as usize, max(0, -horizontal) as usize);
 
-    let (inset_top, margin_top) = if v > 0.0 {
-        (0, (v / 100.0 * (height as f64)).round() as usize)
-    } else {
-        ((v / -100.0 * (height as f64)).round() as usize, 0)
-    };
-
-    if inset_left == 0 && margin_left == 0 && inset_top == 0 && margin_top == 0 {
-        // This should rarely happen if we actually enter this function.
-        return img;
-    }
+    let (inset_top, margin_top) = (max(0, -vertical) as usize, max(0, vertical) as usize);
 
     let src_top = min(inset_top, height);
     let src_bottom = height.saturating_sub(margin_top);
@@ -560,4 +563,28 @@ fn translate_image<'a>(
 
 
     Cow::Owned(RgbImage::from_vec(width as u32, height as u32, output).unwrap())
+}
+
+#[cfg(test)]
+mod tests {
+    use image::{ImageBuffer, Rgb, Rgba};
+
+    use super::*;
+
+    #[test]
+    fn test_separable() {
+        let img = Cow::Owned(ImageBuffer::from_fn(10000, 10000, |x, y| {
+            Rgb::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        }));
+
+        let out_res = (512, 507).into();
+        let translation = (77, 84);
+
+        let translated = translate_image(img, translation.0, translation.1);
+
+        let cpu = resize_par_linear::<4>(img.as_raw(), img.dimensions().into(), out_res, Lanczos3);
+
+        let total = cpu.len() as f64;
+        // assert!(c.abs_diff(g) <= 1);
+    }
 }

@@ -171,14 +171,19 @@ __kernel void lanczos_vertical(
         int2 src_bounds,
         global float *dst_image,
         int2 dst_bounds,
+        long translation,
         uchar channels) {
     int2 dst_coord = (int2)(get_global_id(0), get_global_id(1));
 
     float2 ratio = convert_float2(src_bounds)/convert_float2(dst_bounds);
+    float dst_translation = (float)translation / ratio.y;
+
     float2 support_ratio = max(ratio, 1.0f);
     float2 support = support_ratio * 3;
 
     float2 src_centre = (convert_float2(dst_coord) + 0.5f) * ratio;
+
+    src_centre.y -= (float)translation;
 
     int2 top_left = clamp(convert_int2_rtn(src_centre - support), 0, src_bounds-1);
     int2 bottom_right = clamp(convert_int2_rtp(src_centre + support), top_left+1, src_bounds);
@@ -200,8 +205,13 @@ __kernel void lanczos_vertical(
     }
 
     out_pix /= weight_sum;
-    // NOTE: do not clamp intermediate values
 
+    if (dst_coord.y < (int)max(ceil(dst_translation), 0.0f)
+            || dst_coord.y >= dst_bounds.y - (int)max(ceil(-dst_translation), 0.0f)) {
+        out_pix = (float4)(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+
+    // NOTE: do not clamp intermediate values
     ulong offset = (ulong)dst_coord.y * (ulong)dst_bounds.x + (ulong)dst_coord.x;
     if (channels == 4) {
         vstore4(out_pix, offset, dst_image);
@@ -219,25 +229,30 @@ __kernel void lanczos_horizontal(
         int2 src_bounds,
         global uchar *dst_image,
         int2 dst_bounds,
+        long translation,
         uchar channels) {
     int2 dst_coord = (int2)(get_global_id(0), get_global_id(1));
 
     float2 ratio = convert_float2(src_bounds)/convert_float2(dst_bounds);
+    float dst_translation = (float)translation / ratio.x;
+
     float2 support_ratio = max(ratio, 1.0f);
     float2 support = support_ratio * 3;
 
-    float2 in_centre = (convert_float2(dst_coord) + 0.5f) * ratio;
+    float2 src_centre = (convert_float2(dst_coord) + 0.5f) * ratio;
 
-    int2 top_left = clamp(convert_int2_rtn(in_centre - support), 0, src_bounds-1);
-    int2 bottom_right = clamp(convert_int2_rtp(in_centre + support), top_left+1, src_bounds);
+    src_centre.x += (float)translation;
 
-    in_centre = in_centre - 0.5f;
+    int2 top_left = clamp(convert_int2_rtn(src_centre - support), 0, src_bounds-1);
+    int2 bottom_right = clamp(convert_int2_rtp(src_centre + support), top_left+1, src_bounds);
+
+    src_centre = src_centre - 0.5f;
 
     float4 out_pix = 0;
 
     float weight_sum = 0.0;
     for (int x = top_left.x; x < bottom_right.x; x++) {
-        float w = lanczos3_weight(((float)(x) - in_centre.x) / support_ratio.x);
+        float w = lanczos3_weight(((float)(x) - src_centre.x) / support_ratio.x);
 
         float4 src_pix;
         ulong offset = (ulong)dst_coord.y * (ulong)src_bounds.x + (ulong)x;
@@ -257,6 +272,11 @@ __kernel void lanczos_horizontal(
     }
 
     out_pix /= weight_sum;
+
+    if (dst_coord.x < (int)max(ceil(-dst_translation), 0.0f)
+            || dst_coord.x >= dst_bounds.x - (int)max(ceil(dst_translation), 0.0f)) {
+        out_pix = (float4)(1.0f, 1.0f, 1.0f, 1.0f);
+    }
 
     write_srgb(dst_image, dst_coord, dst_bounds.x, channels, out_pix);
 }

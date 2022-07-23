@@ -8,7 +8,7 @@ use std::num::{NonZeroI32, NonZeroU32};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{History, Input};
@@ -251,12 +251,12 @@ pub async fn run(starting_path: &Path) {
         drop(props);
 
         if process {
-            // let start = Instant::now();
+            let start = Instant::now();
             wallpaper.process(false);
-            // println!("process {:?}", start.elapsed());
-            // let set = Instant::now();
+            println!("process {:?}", start.elapsed());
+            let set = Instant::now();
             set_wallpapers(&[(&wid, &monitors)], true);
-            // println!("set {:?} / {:?}", set.elapsed(), start.elapsed());
+            println!("set {:?} / {:?}", set.elapsed(), start.elapsed());
         }
 
         comp_sender.send(()).unwrap();
