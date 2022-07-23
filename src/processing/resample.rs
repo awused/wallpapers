@@ -22,7 +22,20 @@ mod opencl {
         channels: u8,
     ) -> ocl::Result<Vec<u8>> {
         let mut pro_que = OPENCL_QUEUE.clone();
-        // TODO -- propagate errors back to the main thread to mark OpenCL as disabled
+
+        // Using separate queues for each job seems slower unless doing translation at the same
+        // time, when it does provide meaningful benefits.
+        // Possible this is faster on cards with better compute scheduling than Pascal in all
+        // cases, in which case this would always be worth using.
+        // For now, leave it out, but it's something to revisit.
+        //
+        // let ctx = pro_que.context().clone();
+        // let device = pro_que.device();
+        // let program = pro_que.program().clone();
+        // let new_queue = Queue::new(&ctx, device, None).unwrap();
+        // let mut pro_que = ProQue::new(ctx, new_queue, program, Some((current_res.w,
+        // target_res.h)));
+
 
         // Alignment check. This should never fail, but if it does we can't go on.
         assert!((std::ptr::addr_of!(image[0]) as usize) % 4 == 0);
