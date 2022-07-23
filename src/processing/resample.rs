@@ -1,5 +1,92 @@
-use image::{DynamicImage, GenericImageView, ImageBuffer, Pixel, Rgb32FImage, RgbImage};
 use rayon::iter::{ParallelBridge, ParallelIterator};
+
+use crate::wallpaper::Res;
+
+#[cfg(feature = "opencl")]
+mod opencl {
+    use ocl::prm::Int2;
+    use ocl::{flags, Buffer, ProQue};
+    use once_cell::sync::Lazy;
+
+    use crate::wallpaper::Res;
+
+    pub static OPENCL_QUEUE: Lazy<ProQue> = Lazy::new(|| {
+        let resample_src = include_str!("resample.cl");
+        ProQue::builder().src(resample_src).build().unwrap()
+    });
+
+    pub fn resize_opencl(
+        image: &[u8],
+        current_res: Res,
+        target_res: Res,
+        channels: u8,
+    ) -> ocl::Result<Vec<u8>> {
+        let mut pro_que = OPENCL_QUEUE.clone();
+        // TODO -- propagate errors back to the main thread to mark OpenCL as disabled
+
+        // Alignment check. This should never fail, but if it does we can't go on.
+        assert!((std::ptr::addr_of!(image[0]) as usize) % 4 == 0);
+        assert!(channels <= 4);
+        assert_eq!(
+            current_res.w as usize * current_res.h as usize * channels as usize,
+            image.len()
+        );
+
+        let src_image = unsafe {
+            Buffer::<u8>::builder()
+                .len(image.len())
+                .flags(flags::MEM_READ_ONLY | flags::MEM_HOST_WRITE_ONLY)
+                .use_host_slice(image)
+                .queue(pro_que.queue().clone())
+                .build()?
+        };
+
+        let int_image = Buffer::<f32>::builder()
+            .len(current_res.w as usize * target_res.h as usize * channels as usize)
+            .flags(flags::MEM_HOST_NO_ACCESS)
+            .queue(pro_que.queue().clone())
+            .build()?;
+
+        let mut outimg = vec![0; target_res.w as usize * target_res.h as usize * channels as usize];
+        let dst_image = Buffer::<u8>::builder()
+            .len(outimg.len())
+            .flags(flags::MEM_WRITE_ONLY | flags::MEM_HOST_READ_ONLY)
+            .queue(pro_que.queue().clone())
+            .build()?;
+
+        pro_que.set_dims((current_res.w, target_res.h));
+        let kernel_v = pro_que
+            .kernel_builder("lanczos_vertical")
+            .arg(&src_image)
+            .arg(Int2::new(current_res.w as _, current_res.h as _))
+            .arg(&int_image)
+            .arg(Int2::new(current_res.w as _, target_res.h as _))
+            .arg(channels)
+            .build()?;
+
+        pro_que.set_dims((target_res.w, target_res.h));
+        let kernel_h = pro_que
+            .kernel_builder("lanczos_horizontal")
+            .arg(&int_image)
+            .arg(Int2::new(current_res.w as _, target_res.h as _))
+            .arg(&dst_image)
+            .arg(Int2::new(target_res.w as _, target_res.h as _))
+            .arg(channels)
+            .build()?;
+
+        // Unsafe due to calling C kernel code.
+        unsafe {
+            kernel_v.enq()?;
+            kernel_h.enq()?;
+        }
+
+        dst_image.read(&mut outimg).enq()?;
+        Ok(outimg)
+    }
+}
+
+#[cfg(feature = "opencl")]
+pub use opencl::*;
 
 
 // The MIT License (MIT)
@@ -23,7 +110,6 @@ use rayon::iter::{ParallelBridge, ParallelIterator};
 // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
-//
 
 // See http://cs.brown.edu/courses/cs123/lectures/08_Image_Processing_IV.pdf
 // for some of the theory behind image scaling and convolution
@@ -95,6 +181,7 @@ use rayon::iter::{ParallelBridge, ParallelIterator};
 ///     <td>1170 ms</td>
 ///   </tr>
 /// </table>
+#[allow(unused)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FilterType {
     /// Nearest Neighbor
@@ -111,15 +198,6 @@ pub enum FilterType {
 
     /// Lanczos with window 3
     Lanczos3,
-}
-
-/// A Representation of a separable filter.
-struct Filter<'a> {
-    /// The filter's filter function.
-    pub(crate) kernel: Box<dyn Fn(f32) -> f32 + Sync + 'a>,
-
-    /// The window on which this filter operates.
-    pub(crate) support: f32,
 }
 
 // sinc function: the ideal sampling filter.
@@ -190,10 +268,10 @@ const fn box_kernel(_x: f32) -> f32 {
     1.0
 }
 
-#[inline]
-fn srgb_to_linear(s: f32) -> f32 {
-    if s <= 0.04045 { s / 12.92 } else { f32::powf((s + 0.055) / 1.055, 2.4) }
-}
+// #[inline]
+// fn srgb_to_linear(s: f32) -> f32 {
+//     if s <= 0.04045 { s / 12.92 } else { f32::powf((s + 0.055) / 1.055, 2.4) }
+// }
 
 #[inline]
 fn linear_to_srgb(s: f32) -> f32 {
@@ -205,29 +283,29 @@ fn linear_to_srgb(s: f32) -> f32 {
 }
 
 static MAX: f32 = 255f32;
-static MIN: f32 = 0f32;
-// TODO -- just hardcode this and get rid of the branching. It's fine.
-static CHANNELS: usize = 3;
 
 // Sample the rows of the supplied image using the provided filter.
 // The height of the image remains unchanged.
 // ```new_width``` is the desired width of the new image
 // ```filter``` is the filter to use for sampling.
 // ```image``` is not necessarily Rgba and the order of channels is passed through.
-fn horizontal_par_sample(image: Rgb32FImage, new_width: u32, filter: &Filter) -> RgbImage {
-    let (width, height) = image.dimensions();
+fn horizontal_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>(
+    image: Vec<f32>,
+    current_dims: (u32, u32),
+    new_width: u32,
+    kernel: K,
+) -> Vec<u8> {
+    let (width, height) = current_dims;
 
     let ratio = width as f32 / new_width as f32;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
-    let src_support = filter.support * sratio;
+    let src_support = S as f32 * sratio;
 
     // Create a rotated image and fix it later
-    let mut out = ImageBuffer::new(height, new_width);
+    let mut out = vec![0; height as usize * new_width as usize * N];
 
-    out.chunks_exact_mut(height as usize * CHANNELS)
-        .enumerate()
-        .par_bridge()
-        .for_each(|(outx, outcol)| {
+    out.chunks_exact_mut(height as usize * N).enumerate().par_bridge().for_each(
+        |(outx, outcol)| {
             // Find the point in the input image corresponding to the centre
             // of the current pixel in the output image.
             let inputx = (outx as f32 + 0.5) * ratio;
@@ -251,57 +329,69 @@ fn horizontal_par_sample(image: Rgb32FImage, new_width: u32, filter: &Filter) ->
 
             let mut sum = 0.0;
             for i in left..right {
-                let w = (filter.kernel)((i as f32 - inputx) / sratio);
+                let w = kernel((i as f32 - inputx) / sratio);
                 ws.push(w);
                 sum += w;
             }
             ws.iter_mut().for_each(|w| *w /= sum);
 
-            outcol.chunks_exact_mut(CHANNELS).enumerate().for_each(|(y, chunk)| {
-                let mut t = (0.0, 0.0, 0.0, 0.0);
+            outcol.chunks_exact_mut(N).enumerate().for_each(|(y, chunk)| {
+                let mut t = [0.0; N];
 
                 for (i, w) in ws.iter().enumerate() {
-                    let p = image.get_pixel(left + i as u32, y as u32);
+                    let start = (y as usize * width as usize + (left as usize + i)) * N;
+                    let vec = &image[start..start + N];
 
-                    #[allow(deprecated)]
-                    let vec = p.channels4();
-
-                    t.0 += vec.0 * w;
-                    t.1 += vec.1 * w;
-                    t.2 += vec.2 * w;
-                    t.3 += vec.3 * w;
+                    for i in 0..N {
+                        t[i] += vec[i] * w;
+                    }
                 }
 
-                let a_inv = if CHANNELS > 3 {
-                    if t.3 != 0. { MAX / t.3 } else { 0. }
-                } else {
-                    1.0
-                };
+                match N {
+                    4 => {
+                        let a_inv = if t[3] != 0. { MAX / t[3] } else { 0. };
 
-                t.0 = linear_to_srgb(t.0 * a_inv) * MAX;
-                t.1 = linear_to_srgb(t.1 * a_inv) * MAX;
-                t.2 = linear_to_srgb(t.2 * a_inv) * MAX;
+                        t[0] = linear_to_srgb(t[0] * a_inv) * MAX;
+                        t[1] = linear_to_srgb(t[1] * a_inv) * MAX;
+                        t[2] = linear_to_srgb(t[2] * a_inv) * MAX;
+                    }
+                    3 => {
+                        t[0] = linear_to_srgb(t[0]) * MAX;
+                        t[1] = linear_to_srgb(t[1]) * MAX;
+                        t[2] = linear_to_srgb(t[2]) * MAX;
+                    }
+                    2 => {
+                        let a_inv = if t[1] != 0. { MAX / t[1] } else { 0. };
 
-                // as already does saturating at min/max int values
-                let t =
-                    (t.0.round() as u8, t.1.round() as u8, t.2.round() as u8, t.3.round() as u8);
+                        t[0] = linear_to_srgb(t[0] * a_inv) * MAX;
+                    }
+                    1 => {
+                        t[0] = linear_to_srgb(t[0]) * MAX;
+                    }
+                    _ => unreachable!(),
+                }
 
-                chunk[0] = t.0;
-                chunk[1] = t.1;
-                chunk[2] = t.2;
-                if CHANNELS > 3 {
-                    chunk[3] = t.3;
+
+                for i in 0..N {
+                    chunk[i] = t[i].round() as u8;
                 }
             });
+        },
+    );
+
+    let mut rotated = vec![0; new_width as usize * height as usize * N];
+
+    rotated
+        .chunks_exact_mut(new_width as usize * N)
+        .enumerate()
+        .par_bridge()
+        .for_each(|(y, row)| {
+            for (x, p) in row.chunks_exact_mut(N).enumerate() {
+                p[..N].copy_from_slice(
+                    &out[(x * height as usize + y) * N..(x * height as usize + y) * N + N],
+                );
+            }
         });
-
-    let mut rotated = ImageBuffer::new(new_width, height);
-
-    rotated.enumerate_rows_mut().par_bridge().for_each(|(y, row)| {
-        for (x, _, p) in row {
-            *p = out[(y, x)]
-        }
-    });
 
     rotated
 }
@@ -313,21 +403,21 @@ fn horizontal_par_sample(image: Rgb32FImage, new_width: u32, filter: &Filter) ->
 // ```filter``` is the filter to use for sampling.
 // The return value is not necessarily Rgba, the underlying order of channels in ```image``` is
 // preserved.
-fn vertical_par_sample(
+fn vertical_par_sample<const N: usize, const S: usize, K: Fn(f32) -> f32 + Sync>(
     image: &[u8],
-    current_res: (u32, u32),
+    current_res: Res,
     new_height: u32,
-    filter: &Filter,
-) -> Rgb32FImage {
-    let (width, height) = (current_res.0, current_res.1);
+    kernel: K,
+) -> Vec<f32> {
+    let (width, height) = (current_res.w, current_res.h);
 
     let ratio = height as f32 / new_height as f32;
     let sratio = if ratio < 1.0 { 1.0 } else { ratio };
-    let src_support = filter.support * sratio;
+    let src_support = S as f32 * sratio;
 
-    let mut out = ImageBuffer::new(width, new_height);
+    let mut out = vec![0.0; width as usize * new_height as usize * N];
 
-    out.chunks_exact_mut(width as usize * CHANNELS)
+    out.chunks_exact_mut(width as usize * N)
         .enumerate()
         .par_bridge()
         .for_each(|(outy, outrow)| {
@@ -346,37 +436,48 @@ fn vertical_par_sample(
 
             let mut sum = 0.0;
             for i in left..right {
-                let w = (filter.kernel)((i as f32 - inputy) / sratio);
+                let w = kernel((i as f32 - inputy) / sratio);
                 ws.push(w);
                 sum += w;
             }
             ws.iter_mut().for_each(|w| *w /= sum);
 
-            outrow.chunks_exact_mut(CHANNELS).enumerate().for_each(|(x, chunk)| {
-                let mut t = (0.0, 0.0, 0.0, 0.0);
+            outrow.chunks_exact_mut(N).enumerate().for_each(|(x, chunk)| {
+                let mut t = [0.0; N];
 
 
                 for (i, w) in ws.iter().enumerate() {
-                    let start = ((left as usize + i) * width as usize + x) * CHANNELS;
-                    let vec = &image[start..start + CHANNELS];
+                    let start = ((left as usize + i) * width as usize + x) * N;
+                    let vec = &image[start..start + N];
 
-                    let a = if CHANNELS > 3 { vec[3] as f32 / MAX } else { 1.0 };
+                    match N {
+                        4 => {
+                            let a = vec[3] as f32 / MAX;
 
-                    t.0 += SRGB_LUT[vec[0] as usize] * a * w;
-                    t.1 += SRGB_LUT[vec[1] as usize] * a * w;
-                    t.2 += SRGB_LUT[vec[2] as usize] * a * w;
-                    if CHANNELS > 3 {
-                        t.3 += vec[3] as f32 * w;
+                            t[0] += SRGB_LUT[vec[0] as usize] * a * w;
+                            t[1] += SRGB_LUT[vec[1] as usize] * a * w;
+                            t[2] += SRGB_LUT[vec[2] as usize] * a * w;
+                            t[3] += vec[3] as f32 * w;
+                        }
+                        3 => {
+                            t[0] += SRGB_LUT[vec[0] as usize] * w;
+                            t[1] += SRGB_LUT[vec[1] as usize] * w;
+                            t[2] += SRGB_LUT[vec[2] as usize] * w;
+                        }
+                        2 => {
+                            let a = vec[1] as f32 / MAX;
+
+                            t[0] += SRGB_LUT[vec[0] as usize] * a * w;
+                            t[1] += vec[1] as f32 * w;
+                        }
+                        1 => {
+                            t[0] += SRGB_LUT[vec[0] as usize] * w;
+                        }
+                        _ => unreachable!(),
                     }
                 }
 
-
-                chunk[0] = t.0;
-                chunk[1] = t.1;
-                chunk[2] = t.2;
-                if CHANNELS > 3 {
-                    chunk[3] = t.3;
-                }
+                chunk[..N].copy_from_slice(&t[..N]);
             });
         });
 
@@ -388,41 +489,68 @@ fn vertical_par_sample(
 /// assuming srgb input.
 /// ```nwidth``` and ```nheight``` are the new dimensions.
 /// ```filter``` is the sampling filter to use.
+// TODO -- Make "N" into const L: Layout once supported
 #[allow(clippy::missing_panics_doc)]
 #[must_use]
-pub fn resize_par_linear(
+pub fn resize_par_linear<const N: usize>(
     image: &[u8],
-    current_res: (u32, u32),
-    target_res: (u32, u32),
+    current_res: Res,
+    target_res: Res,
     filter: FilterType,
-) -> RgbImage {
-    let mut method = match filter {
-        FilterType::Nearest => Filter {
-            kernel: Box::new(box_kernel),
-            support: 0.0,
-        },
-        FilterType::Triangle => Filter {
-            kernel: Box::new(triangle_kernel),
-            support: 1.0,
-        },
-        FilterType::CatmullRom => Filter {
-            kernel: Box::new(catmullrom_kernel),
-            support: 2.0,
-        },
-        FilterType::Gaussian => Filter {
-            kernel: Box::new(gaussian_kernel),
-            support: 3.0,
-        },
-        FilterType::Lanczos3 => Filter {
-            kernel: Box::new(lanczos3_kernel),
-            support: 3.0,
-        },
-    };
+) -> Vec<u8> {
+    assert!(current_res.w as usize * current_res.h as usize * N == image.len());
 
-    assert!(current_res.0 as usize * current_res.1 as usize * CHANNELS == image.len());
-
-    let vert = vertical_par_sample(image, current_res, target_res.1, &method);
-    horizontal_par_sample(vert, target_res.0, &method)
+    match filter {
+        FilterType::Nearest => {
+            let vert = vertical_par_sample::<N, 0, _>(image, current_res, target_res.h, box_kernel);
+            horizontal_par_sample::<N, 0, _>(
+                vert,
+                (current_res.w, target_res.h),
+                target_res.w,
+                box_kernel,
+            )
+        }
+        FilterType::Triangle => {
+            let vert =
+                vertical_par_sample::<N, 1, _>(image, current_res, target_res.h, triangle_kernel);
+            horizontal_par_sample::<N, 1, _>(
+                vert,
+                (current_res.w, target_res.h),
+                target_res.w,
+                triangle_kernel,
+            )
+        }
+        FilterType::CatmullRom => {
+            let vert =
+                vertical_par_sample::<N, 2, _>(image, current_res, target_res.h, catmullrom_kernel);
+            horizontal_par_sample::<N, 2, _>(
+                vert,
+                (current_res.w, target_res.h),
+                target_res.w,
+                catmullrom_kernel,
+            )
+        }
+        FilterType::Gaussian => {
+            let vert =
+                vertical_par_sample::<N, 3, _>(image, current_res, target_res.h, gaussian_kernel);
+            horizontal_par_sample::<N, 3, _>(
+                vert,
+                (current_res.w, target_res.h),
+                target_res.w,
+                gaussian_kernel,
+            )
+        }
+        FilterType::Lanczos3 => {
+            let vert =
+                vertical_par_sample::<N, 3, _>(image, current_res, target_res.h, lanczos3_kernel);
+            horizontal_par_sample::<N, 3, _>(
+                vert,
+                (current_res.w, target_res.h),
+                target_res.w,
+                lanczos3_kernel,
+            )
+        }
+    }
 }
 
 
@@ -465,3 +593,131 @@ const SRGB_LUT: [f32; 256] = [
     0.9046612, 0.91309863, 0.92158186, 0.9301109, 0.9386857, 0.9473065, 0.9559733, 0.9646863,
     0.9734453, 0.9822506, 0.9911021, 1.0,
 ];
+
+
+#[cfg(feature = "opencl")]
+#[cfg(test)]
+mod ocl_tests {
+    use image::{ImageBuffer, Luma, LumaA, Rgb, Rgba};
+
+    use super::*;
+
+    // Results are allowed to differ by 1 value in each channel, at most, which is expected from
+    // rounding. They should never differ more than that.
+    static TOLERANCE: f64 = 0.0001;
+
+    #[test]
+    fn test_downscale_almost_eq_rgba() {
+        let img = ImageBuffer::from_fn(10000, 10000, |x, y| {
+            Rgba::from([
+                (x % 256) as u8,
+                (y % 256) as u8,
+                ((x + y) % 256) as u8,
+                ((x ^ y) % 256) as u8,
+            ])
+        });
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<4>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::Lanczos3,
+        );
+        let gpu = resize_opencl(img.as_raw(), img.dimensions().into(), out_res, 4).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+
+    #[test]
+    fn test_downscale_almost_eq_rgb() {
+        let img = ImageBuffer::from_fn(500, 500, |x, y| {
+            Rgb::from([(x % 256) as u8, (y % 256) as u8, ((x + y) % 256) as u8])
+        });
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<3>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::Lanczos3,
+        );
+        let gpu = resize_opencl(img.as_raw(), img.dimensions().into(), out_res, 3).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+
+    #[test]
+    fn test_downscale_almost_eq_greyalpha() {
+        let img = ImageBuffer::from_fn(1000, 1000, |x, y| {
+            LumaA::from([(x % 256) as u8, (y % 256) as u8])
+        });
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<2>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::Lanczos3,
+        );
+        let gpu = resize_opencl(img.as_raw(), img.dimensions().into(), out_res, 2).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+
+    #[test]
+    fn test_downscale_almost_eq_grey() {
+        let img = ImageBuffer::from_fn(1000, 1000, |x, y| Luma::from([((x + y) % 256) as u8]));
+
+        let out_res = (80, 66).into();
+
+        let cpu = resize_par_linear::<1>(
+            img.as_raw(),
+            img.dimensions().into(),
+            out_res,
+            FilterType::Lanczos3,
+        );
+        let gpu = resize_opencl(img.as_raw(), img.dimensions().into(), out_res, 1).unwrap();
+
+        let total = cpu.len() as f64;
+        let mut mismatch = 0;
+        for (c, g) in cpu.iter().zip(gpu) {
+            assert!(c.abs_diff(g) <= 1);
+            if *c != g {
+                mismatch += 1;
+            }
+        }
+
+        assert!(mismatch as f64 / total <= TOLERANCE);
+    }
+}

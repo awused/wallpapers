@@ -19,6 +19,8 @@ use crate::closing;
 use crate::config::{ImageProperties, CONFIG};
 use crate::directories::ids::WallpaperID;
 use crate::monitors::Monitor;
+#[cfg(feature = "opencl")]
+use crate::processing::resample::resize_opencl;
 use crate::processing::resample::resize_par_linear;
 use crate::processing::resample::FilterType::Lanczos3;
 use crate::processing::{UPSCALING, WORKER};
@@ -34,10 +36,11 @@ static FILE_CACHE: Lazy<Mutex<LruCache<PathBuf, Arc<OnceCell<RgbImage>>>>> =
 // For now, these are only "BGRA" images since it only works for X11.
 pub static OPTIMISTIC_CACHE: OnceCell<Mutex<LruCache<PathBuf, RgbaImage>>> = OnceCell::new();
 
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-struct Res {
-    w: u32,
-    h: u32,
+pub struct Res {
+    pub w: u32,
+    pub h: u32,
 }
 
 
@@ -303,6 +306,8 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         // TODO -- RgbImage may not be any faster than Rgba, and is incompatible with OpenCL.
         // Can also skip alpha multiplication and assume fully opaque "Rgba".
         let mut img: Cow<RgbImage> = Cow::Borrowed(cell.get_or_init(|| {
+            // While some time can be saved here, this only really happens after upscaling, which
+            // is so slow that saving 10-20ms just doesn't matter enough.
             image::open(uf.scaled.path())
                 .unwrap_or_else(|e| panic!("Unable to read image {:?}: {}", uf.scaled.path(), e))
                 .into_rgb8()
@@ -314,7 +319,6 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             }
         }
 
-
         let (m_w, m_h) = (uf.m.width, uf.m.height);
 
         if img.width() != m_w && img.height() != m_h {
@@ -323,7 +327,32 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             let int_w = (img.width() as f64 * ratio).round() as u32;
             let int_h = (img.height() as f64 * ratio).round() as u32;
 
-            img = Cow::Owned(resize_par_linear(&img, img.dimensions(), (int_w, int_h), Lanczos3));
+            #[cfg(feature = "opencl")]
+            let resized = if compress {
+                // If we're working to compress the images, we're looking to store them.
+                // Sync jobs can run for a long time in the background; using the CPU is less
+                // disruptive.
+                resize_par_linear::<3>(
+                    img.as_raw(),
+                    img.dimensions().into(),
+                    (int_w, int_h).into(),
+                    Lanczos3,
+                )
+            } else {
+                resize_opencl(img.as_raw(), img.dimensions().into(), (int_w, int_h).into(), 3)
+                    .unwrap()
+            };
+
+            #[cfg(not(feature = "opencl"))]
+            let resized = resize_par_linear::<3>(
+                img.as_raw(),
+                img.dimensions().into(),
+                (int_w, int_h).into(),
+                Lanczos3,
+            );
+
+
+            img = Cow::Owned(RgbImage::from_vec(int_w, int_h, resized).unwrap());
         }
 
         if img.width() != m_w || img.width() != m_h {

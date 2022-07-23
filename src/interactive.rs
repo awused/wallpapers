@@ -2,6 +2,7 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, VecDeque};
 use std::convert::Into;
 use std::ffi::OsStr;
+use std::fmt::Write;
 use std::fs::{copy, create_dir_all};
 use std::num::{NonZeroI32, NonZeroU32};
 use std::path::{Component, Path, PathBuf};
@@ -13,6 +14,8 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::{History, Input};
 use image::Rgba;
 use lru::LruCache;
+#[cfg(feature = "opencl")]
+use once_cell::sync::Lazy;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, MissedTickBehavior};
@@ -21,6 +24,8 @@ use crate::config::{load_properties, string_to_colour, ImageProperties, Properti
 use crate::directories::ids::{relative_from_slash, TempWallpaperID, WallpaperID};
 use crate::directories::{next_original_for_prefix, next_original_in_dir, valid_extension};
 use crate::monitors::set_wallpapers;
+#[cfg(feature = "opencl")]
+use crate::processing::resample::OPENCL_QUEUE;
 use crate::wallpaper::{Wallpaper, OPTIMISTIC_CACHE};
 use crate::{closing, make_tdir, monitors};
 
@@ -119,6 +124,11 @@ pub async fn run(starting_path: &Path) {
         return;
     }
 
+    #[cfg(feature = "opencl")]
+    let cl_spawn_handle = thread::spawn(|| {
+        Lazy::force(&OPENCL_QUEUE);
+    });
+
     if monitors::supports_memory_papers() {
         OPTIMISTIC_CACHE.get_or_init(|| Mutex::new(LruCache::new(monitors.len() * 3)));
     }
@@ -152,6 +162,10 @@ pub async fn run(starting_path: &Path) {
     let wallpaper = Wallpaper::new(&wid, &monitors, &tdir);
     wallpaper.process(false);
     set_wallpapers(&[(&wid, &monitors)], true);
+
+    // It'll be done by now, just join it to be certain.
+    #[cfg(feature = "opencl")]
+    cl_spawn_handle.join().unwrap();
 
     // Just checking the status of the closing atomic in a loop is good enough. If the user hits
     // CTRL-C the Input handler will exit immediately.
@@ -316,7 +330,7 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
 
             match next_original_for_prefix(dir, &prefix) {
                 Some((n, digits)) => {
-                    prefix.push_str(&format!("{n:0>digits$}."));
+                    write!(prefix, "{n:0>digits$}.").unwrap();
                     prefix.push_str(&e.to_string_lossy());
                     dest = dir.join(prefix);
                 }

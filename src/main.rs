@@ -23,6 +23,8 @@ use directories::ids::{TempWallpaperID, WallpaperID};
 use lru::LruCache;
 use monitors::Monitor;
 use once_cell::sync::Lazy;
+#[cfg(feature = "opencl")]
+use processing::resample::OPENCL_QUEUE;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tempfile::TempDir;
 use walkdir::{DirEntry, WalkDir};
@@ -337,6 +339,11 @@ fn preview(path: &Path, props: ImageProperties) {
         return;
     }
 
+    #[cfg(feature = "opencl")]
+    let cl_spawn_handle = thread::spawn(|| {
+        Lazy::force(&OPENCL_QUEUE);
+    });
+
     if monitors::supports_memory_papers() {
         OPTIMISTIC_CACHE.get_or_init(|| Mutex::new(LruCache::new(monitors.len() * 3)));
     }
@@ -348,6 +355,9 @@ fn preview(path: &Path, props: ImageProperties) {
     if !closing::closed() {
         monitors::set_wallpapers(&[(&wid, &monitors)], true);
     }
+
+    #[cfg(feature = "opencl")]
+    cl_spawn_handle.join().unwrap();
 }
 
 fn make_tdir() -> TempDir {
