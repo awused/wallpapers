@@ -2,7 +2,7 @@ use std::borrow::Cow;
 use std::cmp::min;
 use std::collections::HashSet;
 use std::fs::{create_dir_all, File};
-use std::num::NonZeroU8;
+use std::num::{NonZeroU8, NonZeroUsize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -29,7 +29,7 @@ use crate::processing::{UPSCALING, WORKER};
 // For interactive or preview this is sufficient.
 // For Sync mode it's enough that it'll dedupe reads to the same file almost every time.
 static FILE_CACHE: Lazy<Mutex<LruCache<PathBuf, Arc<OnceCell<RgbImage>>>>> =
-    Lazy::new(|| Mutex::new(LruCache::new(5)));
+    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(5).unwrap())));
 
 // This is a larger cache for interactive, preview, and in rare cases random mode.
 // We can skip writing and rereading from disk when we know we're going to set them.
@@ -88,7 +88,7 @@ enum IntermediateFile {
 impl IntermediateFile {
     fn path(&self) -> &Path {
         match self {
-            IntermediateFile::AlreadyExists(p) | IntermediateFile::MustBeWritten(p) => p,
+            Self::AlreadyExists(p) | Self::MustBeWritten(p) => p,
         }
     }
 }
@@ -297,10 +297,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
 
         let cell = {
             let mut cache = FILE_CACHE.lock().unwrap();
-            cache
-                .get_or_insert(uf.scaled.path().to_path_buf(), Arc::default)
-                .unwrap()
-                .clone()
+            cache.get_or_insert(uf.scaled.path().to_path_buf(), Arc::default).clone()
         };
 
         // TODO -- RgbImage may not be any faster than Rgba, and is incompatible with OpenCL.
@@ -377,7 +374,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                 FilterType::NoFilter,
             );
 
-            enc.write_image(&*img, img.width(), img.height(), ColorType::Rgb8)
+            enc.write_image(&img, img.width(), img.height(), ColorType::Rgb8)
                 .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", uf.final_file, e));
         }
 

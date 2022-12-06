@@ -5,13 +5,33 @@ use crate::wallpaper::Res;
 #[cfg(feature = "opencl")]
 mod opencl {
     use ocl::prm::Int2;
-    use ocl::{flags, Buffer, ProQue};
+    use ocl::{flags, Buffer, Device, DeviceType, Platform, ProQue};
     use once_cell::sync::Lazy;
 
     use crate::wallpaper::Res;
 
     pub static OPENCL_QUEUE: Lazy<ProQue> = Lazy::new(|| {
         let resample_src = include_str!("resample.cl");
+
+        // Prefer GPUs but just take the first available.
+        // TODO -- might need something to avoid integrated GPUs or specify a specific device.
+        for platform in Platform::list() {
+            let devices = Device::list(platform, Some(DeviceType::GPU));
+            let Ok(devices) = devices else {
+                continue;
+            };
+
+            if let Some(device) = devices.first() {
+                return ProQue::builder()
+                    .platform(platform)
+                    .device(device)
+                    .src(resample_src)
+                    .build()
+                    .unwrap();
+            }
+        }
+
+        println!("Unable to find suitable GPU for OpenCL");
         ProQue::builder().src(resample_src).build().unwrap()
     });
 
@@ -195,7 +215,7 @@ pub use opencl::*;
 ///   </tr>
 /// </table>
 #[allow(unused)]
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FilterType {
     /// Nearest Neighbor
     Nearest,

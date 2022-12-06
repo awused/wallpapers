@@ -1,7 +1,7 @@
 use core::slice;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
-use std::ffi::{c_void, CString};
+use std::ffi::CString;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::{env, mem, ptr};
@@ -63,7 +63,7 @@ pub fn list() -> Vec<Monitor> {
         let xinerama_info = xinerama::XineramaQueryScreens(dpy, ptr::addr_of_mut!(num));
         if xinerama_info.is_null() || num <= 0 {
             if !xinerama_info.is_null() {
-                XFree(xinerama_info as _);
+                XFree(xinerama_info.cast());
             }
         } else {
             let monitors = slice::from_raw_parts(xinerama_info, num as usize)
@@ -76,7 +76,7 @@ pub fn list() -> Vec<Monitor> {
                 })
                 .collect();
 
-            XFree(xinerama_info as _);
+            XFree(xinerama_info.cast());
             XCloseDisplay(dpy);
             return monitors;
         }
@@ -128,9 +128,9 @@ fn malloc_image_buf(img: &RgbaImage) -> MallocedImage {
     let size = mem::size_of_val(&raw_img[0]) * raw_img.len();
 
     unsafe {
-        let buf = libc::malloc(size) as *mut i8;
+        let buf = libc::malloc(size).cast::<i8>();
         assert!(!buf.is_null(), "Failed to allocate image buffer.");
-        buf.copy_from_nonoverlapping(raw_img.as_ptr() as _, size);
+        buf.copy_from_nonoverlapping(raw_img.as_ptr().cast(), size);
 
         MallocedImage(buf, w, h)
     }
@@ -195,12 +195,12 @@ fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
                 }
 
                 if !data_esetroot.is_null() {
-                    XFree(data_esetroot as *mut libc::c_void);
+                    XFree(data_esetroot.cast());
                 }
             }
 
             if !data_root.is_null() {
-                XFree(data_root as *mut libc::c_void);
+                XFree(data_root.cast());
             }
         }
 
@@ -219,7 +219,7 @@ fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
             XA_PIXMAP,
             32,
             PropModeReplace,
-            ptr::addr_of!(pm) as *const u8,
+            ptr::addr_of!(pm).cast(),
             1,
         );
         XChangeProperty(
@@ -229,7 +229,7 @@ fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
             XA_PIXMAP,
             32,
             PropModeReplace,
-            ptr::addr_of!(pm) as *const u8,
+            ptr::addr_of!(pm).cast(),
             1,
         );
     }
@@ -282,7 +282,7 @@ fn set_x_wallpapers(
                 && count > 0
                 && slice::from_raw_parts(depths, count as usize).contains(&24);
             if !depths.is_null() {
-                XFree(depths as *mut c_void);
+                XFree(depths.cast());
             }
 
             if !has_24 {
@@ -372,7 +372,7 @@ pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], temp: bool
         if let Some(cache) = OPTIMISTIC_CACHE.get() {
             set_x_wallpapers(paths_monitors, &*cache.lock().unwrap());
         } else {
-            set_x_wallpapers(paths_monitors, &LruCache::new(0));
+            set_x_wallpapers(paths_monitors, &LruCache::unbounded());
         }
 
         if !temp {

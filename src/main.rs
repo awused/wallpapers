@@ -8,6 +8,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 use std::collections::{BTreeMap, HashSet};
 use std::fs::{remove_dir, remove_file};
+use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
@@ -48,11 +49,11 @@ mod wallpaper;
     about = "Tool for managing and shuffling a large number of wallpapers"
 )]
 pub struct Opt {
-    #[clap(short, long, parse(from_os_str))]
+    #[arg(short, long, value_parser)]
     /// Override the selected config.
     awconf: Option<PathBuf>,
 
-    #[clap(subcommand)]
+    #[command(subcommand)]
     cmd: Command,
 }
 
@@ -65,55 +66,55 @@ enum Command {
         /// Also remove all wallpapers for resolutions that don't match any current monitors.
         /// For example, if you used to have a 1080p monitor but got rid of it, this can clean up
         /// unnecessary files.
-        #[clap(long)]
+        #[arg(long)]
         clean_monitors: bool,
     },
     /// Preview a single wallpaper on every monitor.
     Preview {
-        #[clap(short, long, allow_hyphen_values = true)]
+        #[arg(short, long, allow_hyphen_values = true)]
         /// Vertical offset as a percentage. Positive values translate the viewport upwards.
         vertical: Option<f64>,
 
-        #[clap(short, long, allow_hyphen_values = true)]
+        #[arg(short, long, allow_hyphen_values = true)]
         /// Horizontal offset as a percentage. Positive values translate the viewport to the right.
         horizontal: Option<f64>,
 
-        #[clap(short, long, allow_hyphen_values = true)]
+        #[arg(short, long, allow_hyphen_values = true)]
         /// Rows to crop off the top, negative values pad.
         top: Option<i32>,
 
-        #[clap(short, long, allow_hyphen_values = true)]
+        #[arg(short, long, allow_hyphen_values = true)]
         /// Rows to crop off the bottom, negative values pad.
         bottom: Option<i32>,
 
-        #[clap(short, long, allow_hyphen_values = true)]
+        #[arg(short, long, allow_hyphen_values = true)]
         /// Columns to crop off the left, negative values pad.
         left: Option<i32>,
 
-        #[clap(short, long, allow_hyphen_values = true)]
+        #[arg(short, long, allow_hyphen_values = true)]
         /// Columns to crop off the right, negative values pad.
         right: Option<i32>,
 
-        #[clap(long = "bg")]
+        #[arg(long = "bg")]
         /// Background colour to use when padding. Black, white, or an RRGGBB hex string. Example:
         /// a1b2c3
         background: Option<String>,
 
-        #[clap(short, long, allow_hyphen_values = true)]
+        #[arg(short, long, allow_hyphen_values = true)]
         /// Level of denoising to apply. The exact specifics depend on the upscaler being used.
         /// Defaults to 1.
         denoise: Option<i32>,
 
-        #[clap(parse(from_os_str))]
+        #[arg(value_parser)]
         file: PathBuf,
 
         // Clap bug: https://github.com/clap-rs/clap/issues/3403
-        #[clap(long)]
+        #[arg(long)]
         /// Print help information
         help: bool,
     },
     Interactive {
-        #[clap(parse(from_os_str))]
+        #[arg(value_parser)]
         file: PathBuf,
     },
 }
@@ -177,7 +178,9 @@ fn random() {
 
     // This will only be beneficial on cache misses, but can't hurt.
     if monitors::supports_memory_papers() {
-        OPTIMISTIC_CACHE.get_or_init(|| Mutex::new(LruCache::new(monitors.len() * 3)));
+        OPTIMISTIC_CACHE.get_or_init(|| {
+            Mutex::new(LruCache::new(NonZeroUsize::new(monitors.len() * 3).unwrap()))
+        });
     }
 
     let options = Options::default().keep_unrecognized(true);
@@ -345,7 +348,9 @@ fn preview(path: &Path, props: ImageProperties) {
     });
 
     if monitors::supports_memory_papers() {
-        OPTIMISTIC_CACHE.get_or_init(|| Mutex::new(LruCache::new(monitors.len() * 3)));
+        OPTIMISTIC_CACHE.get_or_init(|| {
+            Mutex::new(LruCache::new(NonZeroUsize::new(monitors.len() * 3).unwrap()))
+        });
     }
 
     let wid = TempWallpaperID::new(path, props, &tdir);

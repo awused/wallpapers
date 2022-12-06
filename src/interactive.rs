@@ -4,7 +4,7 @@ use std::convert::Into;
 use std::ffi::OsStr;
 use std::fmt::Write;
 use std::fs::{copy, create_dir_all};
-use std::num::{NonZeroI32, NonZeroU32};
+use std::num::{NonZeroI32, NonZeroU32, NonZeroUsize};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::thread;
@@ -91,7 +91,7 @@ impl From<&str> for Command {
 }
 
 impl Command {
-    fn process(&self) -> bool {
+    const fn process(&self) -> bool {
         match self {
             Self::Vertical(_)
             | Self::Horizontal(_)
@@ -130,7 +130,9 @@ pub async fn run(starting_path: &Path) {
     });
 
     if monitors::supports_memory_papers() {
-        OPTIMISTIC_CACHE.get_or_init(|| Mutex::new(LruCache::new(monitors.len() * 3)));
+        OPTIMISTIC_CACHE.get_or_init(|| {
+            Mutex::new(LruCache::new(NonZeroUsize::new(monitors.len() * 3).unwrap()))
+        });
     }
 
     let wid = TempWallpaperID::new(starting_path, ImageProperties::default(), &tdir);
@@ -295,54 +297,52 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
             return None;
         }
         (Some(a), Some(b)) if a == b => {}
+
         // Empty file name, like when the user types "existing_or_new_dir/"
         (None, Some(e)) if dest.file_name().map_or(true, |n| n == "*") => {
             let dir = dest.parent()?;
-            match next_original_in_dir(dir) {
-                Some((mut p, n, digits)) => {
-                    p.push(format!("{n:0>digits$}."));
-                    p.push(e);
-                    dest = dir.join(p);
-                }
-                None => {
-                    println!("Could not determine name for next file in {dir:?}");
-                    return None;
-                }
-            }
+            let Some((mut p, n, digits)) = next_original_in_dir(dir) else {
+                println!("Could not determine name for next file in {dir:?}");
+                return None;
+            };
+
+            p.push(format!("{n:0>digits$}."));
+            p.push(e);
+            dest = dir.join(p);
         }
+
         // No file name, but matches a directory, like when the user types "existing_dir"
-        (None, Some(e)) if dest.is_dir() => match next_original_in_dir(&dest) {
-            Some((mut p, n, digits)) => {
-                p.push(format!("{n:0>digits$}."));
-                p.push(e);
-                dest = dest.join(p);
-            }
-            None => {
+        (None, Some(e)) if dest.is_dir() => {
+            // match next_original_in_dir(&dest) {
+            let Some((mut p, n, digits)) = next_original_in_dir(&dest) else {
                 println!("Could not determine name for next file in {dest:?}");
                 return None;
-            }
-        },
+            };
+
+            p.push(format!("{n:0>digits$}."));
+            p.push(e);
+            dest = dest.join(p);
+        }
+
         // Could skip conversion, unlikely to matter in practice
         (None, Some(e)) if dest.as_os_str().to_string_lossy().ends_with('*') => {
             let dir = dest.parent()?;
             let prefix = dest.file_name()?;
             let mut prefix = prefix.to_string_lossy()[0..prefix.len() - 1].to_string();
 
-            match next_original_for_prefix(dir, &prefix) {
-                Some((n, digits)) => {
-                    write!(prefix, "{n:0>digits$}.").unwrap();
-                    prefix.push_str(&e.to_string_lossy());
-                    dest = dir.join(prefix);
-                }
-                None => {
+            let Some((n, digits)) = next_original_for_prefix(dir, &prefix) else {
                     println!(
                         "Could not determine name for next file in {dir:?} starting with \
                          {prefix:?}"
                     );
                     return None;
-                }
-            }
+            };
+
+            write!(prefix, "{n:0>digits$}.").unwrap();
+            prefix.push_str(&e.to_string_lossy());
+            dest = dir.join(prefix);
         }
+
         (_, Some(b)) => {
             println!("New extension doesn't match old extension, should be {:?}", b);
             return None;
@@ -352,6 +352,7 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
             println!("Can't install file without an extension");
             return None;
         }
+        // Existing file doesn't have an extension.
         (Some(_), None) => {}
     }
 
@@ -375,7 +376,7 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
     }
 
     // Try moving first, fall back to copy, never delete
-    if std::fs::rename(&original, &dest).is_ok() {
+    if std::fs::rename(original, &dest).is_ok() {
         println!("Installed wallpaper to {:?}", dest);
         return Some(dest);
     }
