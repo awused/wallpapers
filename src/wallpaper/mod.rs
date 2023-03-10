@@ -182,7 +182,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         }
 
         let mut input = image::open(self.id.original_abs_path()).unwrap_or_else(|e| {
-            panic!("Unable to read image {:?}: {}", self.id.original_abs_path(), e)
+            panic!("Unable to read image {:?}: {e}", self.id.original_abs_path())
         });
 
         let props = uf.props.as_ref().expect("Impossible");
@@ -240,7 +240,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         let enc = PngEncoder::new_with_quality(f, CompressionType::Fast, FilterType::Sub);
 
         enc.write_image(output.as_raw(), output.width(), output.height(), ColorType::Rgba8)
-            .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", output_file, e));
+            .unwrap_or_else(|e| panic!("Failed to save file {output_file:?}: {e}"));
     }
 
     fn upscale(&self, uf: &UncachedFiles) {
@@ -306,7 +306,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             // While some time can be saved here, this only really happens after upscaling, which
             // is so slow that saving 10-20ms just doesn't matter enough.
             image::open(uf.scaled.path())
-                .unwrap_or_else(|e| panic!("Unable to read image {:?}: {}", uf.scaled.path(), e))
+                .unwrap_or_else(|e| panic!("Unable to read image {:?}: {e}", uf.scaled.path()))
                 .into_rgb8()
         }));
 
@@ -375,7 +375,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             );
 
             enc.write_image(&img, img.width(), img.height(), ColorType::Rgb8)
-                .unwrap_or_else(|e| panic!("Failed to save file {:?}: {}", uf.final_file, e));
+                .unwrap_or_else(|e| panic!("Failed to save file {:?}: {e}", uf.final_file));
         }
 
         if let Some(guard) = OPTIMISTIC_CACHE.get() {

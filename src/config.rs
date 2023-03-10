@@ -341,9 +341,9 @@ pub fn load_properties() -> Properties {
     // TOML files are UTF-8 by definition
     let properties = read_to_string(&propfile).expect("Error reading properties file");
 
-    let mut deserializer = toml::Deserializer::new(&properties);
+    let deserializer = toml::Deserializer::new(&properties);
 
-    Properties::deserialize(&mut deserializer).expect("Unable to deserialize properties")
+    Properties::deserialize(deserializer).expect("Unable to deserialize properties")
 }
 
 pub static PROPERTIES: Lazy<Properties> = Lazy::new(load_properties);
