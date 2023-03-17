@@ -147,7 +147,7 @@ fn main() {
                 left: *left,
                 right: *right,
                 background: background.as_ref().map(|s| {
-                    string_to_colour(s).unwrap_or_else(|| panic!("Couldn't parse colour {}", s))
+                    string_to_colour(s).unwrap_or_else(|| panic!("Couldn't parse colour {s}"))
                 }),
                 denoise: *denoise,
                 nested: BTreeMap::new(),
@@ -224,7 +224,7 @@ fn random() {
     let combined: Vec<_> = wids.iter().zip(grouped_monitors.iter().map(Vec::as_slice)).collect();
 
     combined.par_iter().for_each(|(wid, monitors)| {
-        Wallpaper::new(*wid, *monitors, &tdir).process(true);
+        Wallpaper::new(*wid, monitors, &tdir).process(true);
     });
 
     if !closing::closed() {
@@ -325,7 +325,7 @@ fn sync(clean_monitors: bool) {
     }
 
     for k in props_copy.keys() {
-        println!("Unmatched image property for {:?}", k);
+        println!("Unmatched image property for {k:?}");
     }
 
     // We could close the shuffler earlier but this acts as a de-facto lock preventing other

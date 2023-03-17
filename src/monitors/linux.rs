@@ -31,9 +31,7 @@ pub struct Monitor {
 }
 
 pub fn list() -> Vec<Monitor> {
-    let display = if let Ok(d) = env::var("DISPLAY") {
-        d
-    } else {
+    let Ok(display) = env::var("DISPLAY") else {
         println!("No DISPLAY set");
         return Vec::new();
     };
@@ -50,7 +48,7 @@ pub fn list() -> Vec<Monitor> {
 
         let dpy = xlib::XOpenDisplay(display.as_ptr());
         if dpy.is_null() {
-            println!("Failed to open X session {:?}", display);
+            println!("Failed to open X session {display:?}");
             return Vec::new();
         }
 
@@ -239,9 +237,7 @@ fn set_x_wallpapers(
     wallpapers: HashMap<PathBuf, Vec<&Monitor>>,
     cache: &LruCache<PathBuf, RgbaImage>,
 ) {
-    let display = if let Ok(d) = env::var("DISPLAY") {
-        d
-    } else {
+    let Ok(display) = env::var("DISPLAY") else {
         println!("No DISPLAY set");
         return;
     };
@@ -270,7 +266,7 @@ fn set_x_wallpapers(
             use xlib::*;
 
             let dpy = XOpenDisplay(display.as_ptr());
-            assert!(!dpy.is_null(), "Failed to open X session {:?}", display);
+            assert!(!dpy.is_null(), "Failed to open X session {display:?}");
 
             let screen = XDefaultScreen(dpy);
             let (sw, sh) = (XDisplayWidth(dpy, screen), XDisplayHeight(dpy, screen));
@@ -326,8 +322,8 @@ fn set_x_wallpapers(
                             ximg,
                             0,
                             0,
-                            m.left as i32,
-                            m.top as i32,
+                            m.left,
+                            m.top,
                             (*ximg).width as u32,
                             (*ximg).height as u32,
                         );
@@ -370,7 +366,7 @@ pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], temp: bool
     if IS_X.load(Ordering::Relaxed) {
         // Load all uncached wallpapers and convert each one into an XImage.
         if let Some(cache) = OPTIMISTIC_CACHE.get() {
-            set_x_wallpapers(paths_monitors, &*cache.lock().unwrap());
+            set_x_wallpapers(paths_monitors, &cache.lock().unwrap());
         } else {
             set_x_wallpapers(paths_monitors, &LruCache::unbounded());
         }

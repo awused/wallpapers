@@ -22,7 +22,10 @@ use tokio::time::{interval, MissedTickBehavior};
 
 use crate::config::{load_properties, string_to_colour, ImageProperties, Properties, CONFIG};
 use crate::directories::ids::{relative_from_slash, TempWallpaperID, WallpaperID};
-use crate::directories::{next_original_for_prefix, next_original_in_dir, valid_extension};
+use crate::directories::{
+    next_original_for_prefix, next_original_for_wildcard_prefix, next_original_in_dir,
+    valid_extension,
+};
 use crate::monitors::set_wallpapers;
 #[cfg(feature = "opencl")]
 use crate::processing::resample::OPENCL_QUEUE;
@@ -299,6 +302,7 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
         (Some(a), Some(b)) if a == b => {}
 
         // Empty file name, like when the user types "existing_or_new_dir/"
+        // If a new directory is provided, use the empty string as the prefix.
         (None, Some(e)) if dest.file_name().map_or(true, |n| n == "*") => {
             let dir = dest.parent()?;
             let Some((mut p, n, digits)) = next_original_in_dir(dir) else {
@@ -330,7 +334,7 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
             let prefix = dest.file_name()?;
             let mut prefix = prefix.to_string_lossy()[0..prefix.len() - 1].to_string();
 
-            let Some((n, digits)) = next_original_for_prefix(dir, &prefix) else {
+            let Some((n, digits)) = next_original_for_wildcard_prefix(dir, &prefix) else {
                     println!(
                         "Could not determine name for next file in {dir:?} starting with \
                          {prefix:?}"
@@ -343,8 +347,34 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
             dest = dir.join(prefix);
         }
 
+        // Partial file name treated as a prefix provided it can identify a single sequence of
+        // existing files.
+        //
+        // Matches for "prefix" when there are files named "prefix001.png" or
+        // ("prefix_and_some_more_01.png" and "prefix_and_some_more_02.png") but
+        // not if there are both "prefix_and_some_more_01.png" and
+        // "prefix_and_something_else_01.png".
+        //
+        // There must be an existing file, currently doesn't match directories.
+        (None, Some(e)) => {
+            let dir = dest.parent()?;
+            let prefix = dest.file_name()?.to_string_lossy();
+
+            let Some((mut p, n, digits)) = next_original_for_prefix(dir, &prefix) else {
+                    println!(
+                        "Could not determine name for next file in {dir:?} starting with \
+                         {prefix:?}"
+                    );
+                    return None;
+            };
+
+            p.push(format!("{n:0>digits$}."));
+            p.push(e);
+            dest = dir.join(p);
+        }
+
         (_, Some(b)) => {
-            println!("New extension doesn't match old extension, should be {:?}", b);
+            println!("New extension doesn't match old extension, should be {b:?}");
             return None;
         }
         (None, _) => {
@@ -365,38 +395,36 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
     }
 
     if dest.exists() {
-        println!("File {:?} already exists.", dest);
+        println!("File {dest:?} already exists.");
         return None;
     }
 
     // We already know the originals_directory must exist, and new_path must have a parent
     if let Err(e) = create_dir_all(dest.parent().unwrap()) {
-        println!("Error creating directories: {}", e);
+        println!("Error creating directories: {e}");
         return None;
     }
 
     // Try moving first, fall back to copy, never delete
     if std::fs::rename(original, &dest).is_ok() {
-        println!("Installed wallpaper to {:?}", dest);
+        println!("Installed wallpaper to {dest:?}");
         return Some(dest);
     }
 
     match std::fs::copy(original, &dest) {
         Ok(_) => {
-            println!("Installed wallpaper to {:?}, did not delete {:?}", dest, original);
+            println!("Installed wallpaper to {dest:?}, did not delete {original:?}");
             Some(dest)
         }
         Err(e) => {
-            println!("Failed to install file: {}", e);
+            println!("Failed to install file: {e}");
             None
         }
     }
 }
 
 fn update_properties(wid: &TempWallpaperID, res: Option<(NonZeroU32, NonZeroU32)>) {
-    let slash_path = if let Some(p) = wid.slash_path() {
-        p
-    } else {
+    let Some(slash_path) = wid.slash_path() else {
         println!("Tried to update properties for wallpaper outside of originals directory");
         return;
     };
@@ -442,13 +470,12 @@ fn write_properties(props: &Properties) {
         if propfile.is_file() {
             if let Err(e) = copy(&propfile, &backup) {
                 println!(
-                    "Error: Failed to back up existing proprties file: {}. Updated properties \
-                     have not been written.",
-                    e
+                    "Error: Failed to back up existing proprties file: {e}. Updated properties \
+                     have not been written."
                 );
                 return;
             }
-            println!("Backed up existing properties to {:?}", backup);
+            println!("Backed up existing properties to {backup:?}");
         } else {
             println!(
                 "Error: properties file already exists but is not a regular file properties have \
@@ -460,7 +487,7 @@ fn write_properties(props: &Properties) {
 
     let out = toml::to_string(props).unwrap();
     if let Err(e) = std::fs::write(propfile, out) {
-        println!("Failed to write properties to file: {}", e);
+        println!("Failed to write properties to file: {e}");
     }
 }
 

@@ -43,7 +43,7 @@ pub fn get_all_originals() -> Result<Vec<OriginalWallpaperID>, Error> {
         .collect())
 }
 
-// Returns (prefix, count, max_digits)
+// Returns (prefix, next_number, max_digits)
 // Only returns if the directory is empty or contains all files matching the same prefix
 pub fn next_original_in_dir(abs_dir: &Path) -> Option<(OsString, usize, usize)> {
     if !abs_dir.exists() {
@@ -56,7 +56,7 @@ pub fn next_original_in_dir(abs_dir: &Path) -> Option<(OsString, usize, usize)> 
         return None;
     }
 
-    let mut files = fs::read_dir(&abs_dir)
+    let mut files = fs::read_dir(abs_dir)
         .ok()?
         .flatten()
         .map(|de| de.path())
@@ -96,8 +96,49 @@ pub fn next_original_in_dir(abs_dir: &Path) -> Option<(OsString, usize, usize)> 
     Some((prefix.into(), num, digits))
 }
 
-// Returns (count, max_digits)
-pub fn next_original_for_prefix(abs_dir: &Path, prefix: &String) -> Option<(usize, usize)> {
+// Returns (prefix, next_number, max_digits)
+// Only returns values if the prefix identifies a single sequence of existing files.
+pub fn next_original_for_prefix(abs_dir: &Path, prefix: &str) -> Option<(OsString, usize, usize)> {
+    if !abs_dir.is_dir() {
+        return None;
+    }
+
+    let mut files = fs::read_dir(abs_dir)
+        .ok()?
+        .flatten()
+        .map(|de| de.path())
+        .filter(|p| p.is_file())
+        .filter(|p| p.extension().map_or(false, valid_extension))
+        .filter(|p| p.file_name().map_or(false, |f| f.to_string_lossy().starts_with(prefix)));
+
+
+    let first = files.next()?;
+    let fname = first.file_name()?.to_string_lossy();
+    let c = FILE_REGEX.captures(&fname)?;
+
+    let mut num = c[3].parse::<usize>().ok()?;
+    let mut digits = c[3].len();
+    let prefix = &c[1];
+
+    for f in files {
+        let fname = f.file_name()?.to_string_lossy();
+        let c = FILE_REGEX.captures(&fname)?;
+        if &c[1] != prefix {
+            return None;
+        }
+
+        let number = c[3].parse::<usize>().ok()?;
+        num = max(num, number);
+        digits = max(digits, c[3].len());
+    }
+
+    num += 1;
+
+    Some((prefix.into(), num, digits))
+}
+
+// Returns (next_number, max_digits)
+pub fn next_original_for_wildcard_prefix(abs_dir: &Path, prefix: &str) -> Option<(usize, usize)> {
     if !abs_dir.exists() {
         // Default to two digits
         // Corresponds to "install new_dir/prefix*" -> new_dir/prefix00.ext*
@@ -111,7 +152,7 @@ pub fn next_original_for_prefix(abs_dir: &Path, prefix: &String) -> Option<(usiz
     let mut num = 0;
     let mut digits = 0;
 
-    let files = fs::read_dir(&abs_dir)
+    let files = fs::read_dir(abs_dir)
         .ok()?
         .flatten()
         .map(|de| de.path())

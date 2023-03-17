@@ -12,7 +12,7 @@ pub mod resample;
 // Pre- and post- upscaling work shares the same CPU-bound pool
 pub static WORKER: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
-        .thread_name(|u| format!("worker-{}", u))
+        .thread_name(|u| format!("worker-{u}"))
         .panic_handler(handle_panic)
         .build()
         .expect("Error creating worker threadpool")
@@ -20,7 +20,7 @@ pub static WORKER: Lazy<ThreadPool> = Lazy::new(|| {
 
 pub static UPSCALING: Lazy<ThreadPool> = Lazy::new(|| {
     ThreadPoolBuilder::new()
-        .thread_name(|u| format!("upscaling-{}", u))
+        .thread_name(|u| format!("upscaling-{u}"))
         .panic_handler(handle_panic)
         .num_threads(CONFIG.upscaling_jobs)
         .build()

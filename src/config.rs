@@ -89,7 +89,7 @@ impl Display for ImageProperties {
             .iter()
             .zip(values.into_iter())
             .filter_map(|(a, b)| b.as_ref().map(|b| (a, b)))
-            .map(|(a, b)| writeln!(f, "{} = {}", a, b))
+            .map(|(a, b)| writeln!(f, "{a} = {b}"))
             .collect::<Result<Vec<_>, _>>()?;
 
         if let Some(b) = self.background.as_ref() {
@@ -203,7 +203,7 @@ where
     let s = String::deserialize(deserializer)?;
 
     Ok(Some(
-        string_to_colour(&s).unwrap_or_else(|| panic!("Unable to parse colour {}", s)),
+        string_to_colour(&s).unwrap_or_else(|| panic!("Unable to parse colour {s}")),
     ))
 }
 
@@ -239,7 +239,7 @@ fn colour_to_string(c: Rgba<u8>) -> String {
     match (r, g, b) {
         (0, 0, 0) => "black".into(),
         (0xff, 0xff, 0xff) => "white".into(),
-        _ => format!("{:02x}{:02x}{:02x}", r, g, b),
+        _ => format!("{r:02x}{g:02x}{b:02x}"),
     }
 }
 
