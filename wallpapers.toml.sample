@@ -27,3 +27,9 @@ database = 'C:\path\to\wallpaper-db'
 # Using two threads will slightly increase throughput but greatly increase latency.
 # default 1; values higher than 2 are not advised without switching to a cheaper upscaler.
 upscaling_jobs = 1
+
+# Only consider GPUs with names matching this prefix for accelerated downscaling.
+# Only affects interactive and preview modes.
+# See the output of --show-gpus.
+# Case sensitive. Leave empty or blank to pick the first GPU found.
+# gpu_prefix = "NVIDIA"

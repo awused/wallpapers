@@ -8,29 +8,61 @@ mod opencl {
     use ocl::{flags, Buffer, Device, DeviceType, Platform, ProQue};
     use once_cell::sync::Lazy;
 
+    use crate::config::CONFIG;
     use crate::wallpaper::Res;
 
-    pub static OPENCL_QUEUE: Lazy<ProQue> = Lazy::new(|| {
-        let resample_src = include_str!("resample.cl");
-
-        // Prefer GPUs but just take the first available.
-        // TODO -- might need something to avoid integrated GPUs or specify a specific device.
+    pub fn print_gpus() {
+        let mut index = 0;
         for platform in Platform::list() {
+            println!("Platform: {platform}:\n");
+
             let devices = Device::list(platform, Some(DeviceType::GPU));
             let Ok(devices) = devices else {
                 continue;
             };
 
-            if let Some(device) = devices.first() {
+            devices.into_iter().for_each(|d| {
+                println!(
+                    "Device #{index}: {}\n",
+                    d.name().unwrap_or_else(|_| "Unnamed GPU".to_string()),
+                );
+                index += 1;
+            });
+        }
+    }
+
+    pub static OPENCL_QUEUE: Lazy<ProQue> = Lazy::new(|| {
+        let resample_src = include_str!("resample.cl");
+        let gpu_prefix = &CONFIG.gpu_prefix;
+
+        // Take the first available matching the prefix, if any.
+        // No method to differentiate between identical GPUs but this should be fine.
+        for platform in Platform::list() {
+            if let Some(device) = Device::list(platform, Some(DeviceType::GPU))
+                .iter()
+                .flatten()
+                .find(|d| d.name().unwrap_or_else(|_| "".to_string()).starts_with(gpu_prefix))
+            {
                 return ProQue::builder()
                     .platform(platform)
                     .device(device)
                     .src(resample_src)
                     .build()
-                    .unwrap();
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "Could not initialize OpenCL for GPU {}",
+                            device.name().unwrap_or_else(|msg| msg.to_string())
+                        )
+                    });
             }
         }
 
+        if !gpu_prefix.is_empty() {
+            println!("Could not find matching GPU for prefix \"{gpu_prefix}\", try show-gpus");
+        }
+
+        // The code in resample.rs is faster than running resample.cl on the CPU, so this is a bad
+        // idea.
         println!("Unable to find suitable GPU for OpenCL");
         ProQue::builder().src(resample_src).build().unwrap()
     });

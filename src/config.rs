@@ -28,6 +28,9 @@ pub struct Config {
 
     #[serde(default = "one")]
     pub upscaling_jobs: usize,
+
+    #[serde(default)]
+    pub gpu_prefix: String,
 }
 
 const fn one() -> usize {

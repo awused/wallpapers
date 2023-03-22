@@ -25,7 +25,7 @@ use lru::LruCache;
 use monitors::Monitor;
 use once_cell::sync::Lazy;
 #[cfg(feature = "opencl")]
-use processing::resample::OPENCL_QUEUE;
+use processing::resample::{print_gpus, OPENCL_QUEUE};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tempfile::TempDir;
 use walkdir::{DirEntry, WalkDir};
@@ -117,6 +117,8 @@ enum Command {
         #[arg(value_parser)]
         file: PathBuf,
     },
+    #[cfg(feature = "opencl")]
+    ShowGpus,
 }
 
 pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::parse);
@@ -158,6 +160,8 @@ fn main() {
         Command::Interactive { file } => {
             interactive::run(file);
         }
+        #[cfg(feature = "opencl")]
+        Command::ShowGpus => print_gpus(),
     }
 }
 
