@@ -6,10 +6,9 @@ mod windows;
 use std::path::PathBuf;
 
 #[cfg(unix)]
-pub use linux::*;
+pub use self::linux::*;
 #[cfg(windows)]
-pub use windows::*;
-
+pub use self::windows::*;
 use crate::config::CONFIG;
 
 

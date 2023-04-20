@@ -5,3 +5,5 @@
 # Tweaking narenas may have a minor effect but benchmarks probably overstate it.
 JEMALLOC_SYS_WITH_MALLOC_CONF="abort_conf:true,background_thread:true,oversize_threshold:0"
 
+[build]
+# target = "x86_64-pc-windows-gnu"
