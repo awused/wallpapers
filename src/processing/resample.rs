@@ -8,7 +8,6 @@ mod opencl {
     use ocl::{flags, Buffer, Device, DeviceType, Platform, ProQue};
     use once_cell::sync::Lazy;
 
-    use crate::config::CONFIG;
     use crate::wallpaper::Res;
 
     pub fn print_gpus() {
@@ -33,7 +32,12 @@ mod opencl {
 
     pub static OPENCL_QUEUE: Lazy<ProQue> = Lazy::new(|| {
         let resample_src = include_str!("resample.cl");
-        let gpu_prefix = &CONFIG.gpu_prefix;
+
+        #[cfg(not(test))]
+        let gpu_prefix = &crate::config::CONFIG.gpu_prefix;
+
+        #[cfg(test)]
+        let gpu_prefix = "";
 
         // Take the first available matching the prefix, if any.
         // No method to differentiate between identical GPUs but this should be fine.
