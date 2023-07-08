@@ -117,6 +117,7 @@ enum Command {
         #[arg(value_parser)]
         file: PathBuf,
     },
+    ListMonitors,
     #[cfg(feature = "opencl")]
     ShowGpus,
 }
@@ -160,6 +161,7 @@ fn main() {
         Command::Interactive { file } => {
             interactive::run(file);
         }
+        Command::ListMonitors => print_monitors(),
         #[cfg(feature = "opencl")]
         Command::ShowGpus => print_gpus(),
     }
@@ -367,6 +369,18 @@ fn preview(path: &Path, props: ImageProperties) {
 
     #[cfg(feature = "opencl")]
     cl_spawn_handle.join().unwrap();
+}
+
+fn print_monitors() {
+    let monitors = monitors::list();
+    if monitors.is_empty() {
+        println!("No monitors detected");
+        return;
+    }
+
+    for m in monitors {
+        println!("{m:?}");
+    }
 }
 
 fn make_tdir() -> TempDir {

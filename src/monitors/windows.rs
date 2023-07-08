@@ -114,7 +114,9 @@ pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], _temp: boo
         CoUninitialize();
         Ok(())
     })();
-    drop(r);
+    if let Err(e) = r {
+        println!("{e}");
+    }
 
     // If the temporary files are cleaned up too fast Windows will fail to change the wallpaper.
     // 5 seconds is more than enough time for Windows to finish or fail.
