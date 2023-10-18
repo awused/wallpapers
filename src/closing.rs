@@ -27,8 +27,6 @@ pub fn init() {
 
     #[cfg(unix)]
     {
-        flag::register_conditional_default(SIGHUP, CLOSED.clone()).unwrap();
-
         flag::register(SIGHUP, CLOSED.clone()).unwrap();
     }
 }

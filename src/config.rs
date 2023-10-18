@@ -247,8 +247,9 @@ fn colour_to_string(c: Rgba<u8>) -> String {
 }
 
 pub static CONFIG: Lazy<Config> = Lazy::new(|| {
-    let config = awconf::load_config::<Config>("wallpapers", OPTIONS.awconf.as_ref(), None::<&str>)
-        .expect("Error loading config");
+    let (config, _) =
+        awconf::load_config::<Config>("wallpapers", OPTIONS.awconf.as_ref(), None::<&str>)
+            .expect("Error loading config");
     assert!(
         config.originals_directory.is_dir(),
         "Originals directory {:?} is not a directory",

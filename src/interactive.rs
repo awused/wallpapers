@@ -166,6 +166,9 @@ pub async fn run(starting_path: &Path) {
 
     let wallpaper = Wallpaper::new(&wid, &monitors, &tdir);
     wallpaper.process(false);
+    if closing::closed() {
+        return;
+    }
     set_wallpapers(&[(&wid, &monitors)], true);
 
     // It'll be done by now, just join it to be certain.
@@ -260,6 +263,9 @@ pub async fn run(starting_path: &Path) {
             wallpaper.process(false);
             // println!("process {:?}", start.elapsed());
             // let set = Instant::now();
+            if closing::closed() {
+                return;
+            }
             set_wallpapers(&[(&wid, &monitors)], true);
             // println!("set {:?} / {:?}", set.elapsed(), start.elapsed());
         }
@@ -335,11 +341,10 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
             let mut prefix = prefix.to_string_lossy()[0..prefix.len() - 1].to_string();
 
             let Some((n, digits)) = next_original_for_wildcard_prefix(dir, &prefix) else {
-                    println!(
-                        "Could not determine name for next file in {dir:?} starting with \
-                         {prefix:?}"
-                    );
-                    return None;
+                println!(
+                    "Could not determine name for next file in {dir:?} starting with {prefix:?}"
+                );
+                return None;
             };
 
             write!(prefix, "{n:0>digits$}.").unwrap();
@@ -361,11 +366,10 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
             let prefix = dest.file_name()?.to_string_lossy();
 
             let Some((mut p, n, digits)) = next_original_for_prefix(dir, &prefix) else {
-                    println!(
-                        "Could not determine name for next file in {dir:?} starting with \
-                         {prefix:?}"
-                    );
-                    return None;
+                println!(
+                    "Could not determine name for next file in {dir:?} starting with {prefix:?}"
+                );
+                return None;
             };
 
             p.push(format!("{n:0>digits$}."));
