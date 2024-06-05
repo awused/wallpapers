@@ -351,7 +351,7 @@ fn set_x_wallpapers(
     });
 }
 
-pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], temp: bool) {
+pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], _temp: bool) {
     let mut paths_monitors = HashMap::new();
     for (wid, ms) in wallpapers {
         for m in *ms {
@@ -369,11 +369,6 @@ pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], temp: bool
             set_x_wallpapers(paths_monitors, &cache.lock().unwrap());
         } else {
             set_x_wallpapers(paths_monitors, &LruCache::unbounded());
-        }
-
-        if !temp {
-            // TODO -- write fehbg or a similar restore file
-            // TODO -- implement "wallpapers restore" or a more general "wallpapers set"
         }
     } else {
         todo!()

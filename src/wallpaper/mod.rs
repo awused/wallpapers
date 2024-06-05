@@ -185,8 +185,8 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             panic!("Unable to read image {:?}: {e}", self.id.original_abs_path())
         });
 
-        let props = uf.props.as_ref().expect("Impossible");
-        let output_file = uf.cropped.as_ref().expect("Impossible").path();
+        let props = uf.props.as_ref().unwrap();
+        let output_file = uf.cropped.as_ref().unwrap().path();
 
         let r = self.get_resolution();
         let new_r = r.apply_crop_pad(props);
@@ -239,7 +239,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         let f = File::create(output_file).expect("Couldn't create output file");
         let enc = PngEncoder::new_with_quality(f, CompressionType::Fast, FilterType::Sub);
 
-        enc.write_image(output.as_raw(), output.width(), output.height(), ColorType::Rgba8)
+        enc.write_image(output.as_raw(), output.width(), output.height(), ColorType::Rgba8.into())
             .unwrap_or_else(|e| panic!("Failed to save file {output_file:?}: {e}"));
     }
 
@@ -374,7 +374,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                 FilterType::NoFilter,
             );
 
-            enc.write_image(&img, img.width(), img.height(), ColorType::Rgb8)
+            enc.write_image(&img, img.width(), img.height(), ColorType::Rgb8.into())
                 .unwrap_or_else(|e| panic!("Failed to save file {:?}: {e}", uf.final_file));
         }
 

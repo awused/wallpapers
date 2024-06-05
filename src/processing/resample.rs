@@ -78,6 +78,9 @@ mod opencl {
         channels: u8,
     ) -> ocl::Result<Vec<u8>> {
         let mut pro_que = OPENCL_QUEUE.clone();
+        if target_res.w == 0 || target_res.h == 0 {
+            return Ok(Vec::new());
+        }
 
         // Using separate queues for each job seems slower unless doing translation at the same
         // time, when it does provide meaningful benefits.
