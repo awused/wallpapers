@@ -2,12 +2,12 @@ use std::time::Duration;
 use std::{io, thread};
 
 use widestring::U16CString;
-use windows::core::PCWSTR;
 use windows::Win32::Foundation::E_FAIL;
 use windows::Win32::System::Com::{
-    CoCreateInstance, CoInitialize, CoTaskMemFree, CoUninitialize, CLSCTX_LOCAL_SERVER,
+    CLSCTX_LOCAL_SERVER, CoCreateInstance, CoInitialize, CoTaskMemFree, CoUninitialize,
 };
-use windows::Win32::UI::Shell::{DesktopWallpaper, IDesktopWallpaper, DWPOS_CENTER};
+use windows::Win32::UI::Shell::{DWPOS_CENTER, DesktopWallpaper, IDesktopWallpaper};
+use windows::core::PCWSTR;
 
 use crate::directories::ids::WallpaperID;
 
@@ -58,7 +58,7 @@ pub fn supports_memory_papers() -> bool {
 // In error cases this can leak but we'll be closing the program anyway.
 pub fn list() -> Vec<Monitor> {
     let monitors: Result<_, io::Error> = (|| unsafe {
-        CoInitialize(None)?;
+        CoInitialize(None).unwrap();
 
         let mut monitors = Vec::new();
 
@@ -96,7 +96,7 @@ pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], _temp: boo
         .collect();
 
     let r: Result<_, io::Error> = (|| unsafe {
-        CoInitialize(None)?;
+        CoInitialize(None).unwrap();
 
         let desktop: IDesktopWallpaper =
             CoCreateInstance(&DesktopWallpaper, None, CLSCTX_LOCAL_SERVER)?;

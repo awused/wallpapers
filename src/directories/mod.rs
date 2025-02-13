@@ -33,7 +33,7 @@ pub fn get_all_originals() -> Result<Vec<OriginalWallpaperID>, Error> {
         .into_iter()
         .map(DirEntry::into_path)
         .filter(|p| p.is_file())
-        .filter(|p| p.extension().map_or(false, valid_extension))
+        .filter(|p| p.extension().is_some_and(valid_extension))
         .map(|p| {
             OriginalWallpaperID::from_rel_path(
                 p.strip_prefix(&CONFIG.originals_directory)
@@ -61,7 +61,7 @@ pub fn next_original_in_dir(abs_dir: &Path) -> Option<(OsString, usize, usize)> 
         .flatten()
         .map(|de| de.path())
         .filter(|p| p.is_file())
-        .filter(|p| p.extension().map_or(false, valid_extension));
+        .filter(|p| p.extension().is_some_and(valid_extension));
 
     let mut num;
     let mut digits;
@@ -108,8 +108,8 @@ pub fn next_original_for_prefix(abs_dir: &Path, prefix: &str) -> Option<(OsStrin
         .flatten()
         .map(|de| de.path())
         .filter(|p| p.is_file())
-        .filter(|p| p.extension().map_or(false, valid_extension))
-        .filter(|p| p.file_name().map_or(false, |f| f.to_string_lossy().starts_with(prefix)));
+        .filter(|p| p.extension().is_some_and(valid_extension))
+        .filter(|p| p.file_name().is_some_and(|f| f.to_string_lossy().starts_with(prefix)));
 
 
     let first = files.next()?;
@@ -157,7 +157,7 @@ pub fn next_original_for_wildcard_prefix(abs_dir: &Path, prefix: &str) -> Option
         .flatten()
         .map(|de| de.path())
         .filter(|p| p.is_file())
-        .filter(|p| p.extension().map_or(false, valid_extension));
+        .filter(|p| p.extension().is_some_and(valid_extension));
 
     for f in files {
         let fname = f.file_name()?.to_string_lossy();

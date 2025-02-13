@@ -135,15 +135,15 @@ fn malloc_image_buf(img: &RgbaImage) -> MallocedImage {
 }
 
 // This part was figured out from reading several online examples including feh.
-fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
+fn set_x_atoms(xdisplay: *mut xlib::_XDisplay, root: u64, pixmap: u64) {
     let xrootmap = CString::new("_XROOTPMAP_ID").unwrap();
     let esetrootmap = CString::new("ESETROOT_PMAP_ID").unwrap();
 
     unsafe {
         use xlib::*;
 
-        let root_atom = XInternAtom(dpy, xrootmap.as_ptr(), 1);
-        let esetroot_atom = XInternAtom(dpy, esetrootmap.as_ptr(), 1);
+        let root_atom = XInternAtom(xdisplay, xrootmap.as_ptr(), 1);
+        let esetroot_atom = XInternAtom(xdisplay, esetrootmap.as_ptr(), 1);
 
         if root_atom != 0 && esetroot_atom != 0 {
             let mut prop_type = 0;
@@ -152,7 +152,7 @@ fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
             let mut format = 0;
             let mut after = 0;
             XGetWindowProperty(
-                dpy,
+                xdisplay,
                 root,
                 root_atom,
                 0,
@@ -170,7 +170,7 @@ fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
                 let mut data_esetroot = ptr::null_mut();
 
                 XGetWindowProperty(
-                    dpy,
+                    xdisplay,
                     root,
                     esetroot_atom,
                     0,
@@ -189,7 +189,7 @@ fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
                     && prop_type == XA_PIXMAP
                     && *(data_root as *const Pixmap) == *(data_esetroot as *const Pixmap)
                 {
-                    XKillClient(dpy, *(data_root as *const Pixmap));
+                    XKillClient(xdisplay, *(data_root as *const Pixmap));
                 }
 
                 if !data_esetroot.is_null() {
@@ -202,8 +202,8 @@ fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
             }
         }
 
-        let root_atom = XInternAtom(dpy, xrootmap.as_ptr(), 0);
-        let esetroot_atom = XInternAtom(dpy, esetrootmap.as_ptr(), 0);
+        let root_atom = XInternAtom(xdisplay, xrootmap.as_ptr(), 0);
+        let esetroot_atom = XInternAtom(xdisplay, esetrootmap.as_ptr(), 0);
 
         if root_atom == 0 || esetroot_atom == 0 {
             println!("Failed to set X atoms");
@@ -211,23 +211,23 @@ fn set_x_atoms(dpy: *mut xlib::_XDisplay, root: u64, pm: u64) {
         }
 
         XChangeProperty(
-            dpy,
+            xdisplay,
             root,
             root_atom,
             XA_PIXMAP,
             32,
             PropModeReplace,
-            ptr::addr_of!(pm).cast(),
+            ptr::addr_of!(pixmap).cast(),
             1,
         );
         XChangeProperty(
-            dpy,
+            xdisplay,
             root,
             esetroot_atom,
             XA_PIXMAP,
             32,
             PropModeReplace,
-            ptr::addr_of!(pm).cast(),
+            ptr::addr_of!(pixmap).cast(),
             1,
         );
     }
@@ -265,15 +265,16 @@ fn set_x_wallpapers(
         unsafe {
             use xlib::*;
 
-            let dpy = XOpenDisplay(display.as_ptr());
-            assert!(!dpy.is_null(), "Failed to open X session {display:?}");
+            let xdisplay = XOpenDisplay(display.as_ptr());
+            assert!(!xdisplay.is_null(), "Failed to open X session {display:?}");
 
-            let screen = XDefaultScreen(dpy);
-            let (sw, sh) = (XDisplayWidth(dpy, screen), XDisplayHeight(dpy, screen));
-            let root = XRootWindow(dpy, screen);
+            let screen = XDefaultScreen(xdisplay);
+            let (screen_w, screen_h) =
+                (XDisplayWidth(xdisplay, screen) as u32, XDisplayHeight(xdisplay, screen) as u32);
+            let root = XRootWindow(xdisplay, screen);
 
             let mut count = 0;
-            let depths = XListDepths(dpy, screen, &mut count);
+            let depths = XListDepths(xdisplay, screen, &mut count);
             let has_24 = !depths.is_null()
                 && count > 0
                 && slice::from_raw_parts(depths, count as usize).contains(&24);
@@ -282,71 +283,70 @@ fn set_x_wallpapers(
             }
 
             if !has_24 {
-                XCloseDisplay(dpy);
+                XCloseDisplay(xdisplay);
                 panic!("Could not get desired depth of 24");
             }
             let depth = 24;
 
 
-            XSync(dpy, 0);
+            XSync(xdisplay, 0);
 
             // Black rectangle is probably unnecessary, but so cheap it's fine as a failsafe.
-            let pm = XCreatePixmap(dpy, root, sw as u32, sh as u32, depth as u32);
-            let gc = XCreateGC(dpy, pm, 0, ptr::null_mut());
-            XSetForeground(dpy, gc, XBlackPixel(dpy, screen));
-            XFillRectangle(dpy, pm, gc, 0, 0, sw as u32, sh as u32);
+            let pixmap = XCreatePixmap(xdisplay, root, screen_w, screen_h, depth as u32);
+            let gc = XCreateGC(xdisplay, pixmap, 0, ptr::null_mut());
+            XSetForeground(xdisplay, gc, XBlackPixel(xdisplay, screen));
+            XFillRectangle(xdisplay, pixmap, gc, 0, 0, screen_w, screen_h);
 
 
-            let draw_each = image_futures.map(|(ms, recv)| {
-                recv.map_ok(|mi| {
-                    let MallocedImage(buf, w, h) = mi;
-                    // Not thread safe, but almost instant.
-                    let ximg = XCreateImage(
-                        dpy,
-                        CopyFromParent as *mut Visual,
-                        24,
-                        ZPixmap,
-                        0,
-                        buf,
-                        w,
-                        h,
-                        32,
-                        0,
-                    );
-
-                    for m in ms {
-                        XPutImage(
-                            dpy,
-                            pm,
-                            gc,
-                            ximg,
+            let unordered: FuturesUnordered<_> = image_futures
+                .map(|(monitors, recv)| {
+                    recv.map_ok(|MallocedImage(buf, w, h)| {
+                        // Not thread safe, but almost instant.
+                        let ximg = XCreateImage(
+                            xdisplay,
+                            CopyFromParent as *mut Visual,
+                            24,
+                            ZPixmap,
                             0,
+                            buf,
+                            w,
+                            h,
+                            32,
                             0,
-                            m.left,
-                            m.top,
-                            (*ximg).width as u32,
-                            (*ximg).height as u32,
                         );
-                    }
 
-                    XDestroyImage(ximg);
+                        for m in monitors {
+                            XPutImage(
+                                xdisplay,
+                                pixmap,
+                                gc,
+                                ximg,
+                                0,
+                                0,
+                                m.left,
+                                m.top,
+                                (*ximg).width as u32,
+                                (*ximg).height as u32,
+                            );
+                        }
+
+                        XDestroyImage(ximg);
+                    })
                 })
-            });
-
-            let unordered = FuturesUnordered::from_iter(draw_each);
+                .collect();
 
             // Single threaded executor, no risk of X calls from other threads.
             block_on(unordered.collect::<Vec<_>>());
 
-            set_x_atoms(dpy, root, pm);
+            set_x_atoms(xdisplay, root, pixmap);
 
-            XSetWindowBackgroundPixmap(dpy, root, pm);
-            XClearWindow(dpy, root);
-            XFlush(dpy);
-            XFreeGC(dpy, gc);
-            XSetCloseDownMode(dpy, RetainPermanent);
+            XSetWindowBackgroundPixmap(xdisplay, root, pixmap);
+            XClearWindow(xdisplay, root);
+            XFlush(xdisplay);
+            XFreeGC(xdisplay, gc);
+            XSetCloseDownMode(xdisplay, RetainPermanent);
 
-            XCloseDisplay(dpy);
+            XCloseDisplay(xdisplay);
         }
     });
 }
