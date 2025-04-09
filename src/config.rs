@@ -29,6 +29,7 @@ pub struct Config {
     #[serde(default = "one")]
     pub upscaling_jobs: usize,
 
+    #[cfg_attr(any(not(feature = "opencl"), test), allow(unused))]
     #[serde(default)]
     pub gpu_prefix: String,
 }
