@@ -5,7 +5,7 @@ use crate::wallpaper::Res;
 #[cfg(feature = "opencl")]
 mod opencl {
     use ocl::prm::Int2;
-    use ocl::{flags, Buffer, Device, DeviceType, Platform, ProQue};
+    use ocl::{Buffer, Device, DeviceType, Platform, ProQue, flags};
     use once_cell::sync::Lazy;
 
     use crate::wallpaper::Res;
@@ -45,7 +45,7 @@ mod opencl {
             if let Some(device) = Device::list(platform, Some(DeviceType::GPU))
                 .iter()
                 .flatten()
-                .find(|d| d.name().unwrap_or_else(|_| "".to_string()).starts_with(gpu_prefix))
+                .find(|d| d.name().unwrap_or_default().starts_with(gpu_prefix))
             {
                 return ProQue::builder()
                     .platform(platform)
