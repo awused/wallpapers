@@ -11,21 +11,20 @@ use std::fs::{remove_dir, remove_file};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 
+use aw_shuffle::AwShuffler;
 use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::{Options, PersistentShuffler};
-use aw_shuffle::AwShuffler;
 use clap::Parser;
-use config::{string_to_colour, ImageProperties, PROPERTIES};
+use config::{ImageProperties, PROPERTIES, string_to_colour};
 use crossbeam_utils::thread::scope;
 use directories::ids::{TempWallpaperID, WallpaperID};
 use lru::LruCache;
 use monitors::Monitor;
-use once_cell::sync::Lazy;
 #[cfg(feature = "opencl")]
-use processing::resample::{print_gpus, OPENCL_QUEUE};
+use processing::resample::{OPENCL_QUEUE, print_gpus};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tempfile::TempDir;
 use walkdir::{DirEntry, WalkDir};
@@ -122,7 +121,7 @@ enum Command {
     ShowGpus,
 }
 
-pub static OPTIONS: Lazy<Opt> = Lazy::new(Opt::parse);
+pub static OPTIONS: LazyLock<Opt> = LazyLock::new(Opt::parse);
 
 fn main() {
     closing::init();
@@ -350,7 +349,7 @@ fn preview(path: &Path, props: ImageProperties) {
 
     #[cfg(feature = "opencl")]
     let cl_spawn_handle = thread::spawn(|| {
-        Lazy::force(&OPENCL_QUEUE);
+        LazyLock::force(&OPENCL_QUEUE);
     });
 
     if monitors::supports_memory_papers() {

@@ -1,10 +1,10 @@
 use std::borrow::Cow;
 use std::cmp::min;
 use std::collections::HashSet;
-use std::fs::{create_dir_all, File};
+use std::fs::{File, create_dir_all};
 use std::num::{NonZeroU8, NonZeroUsize};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock};
 use std::time::SystemTime;
 
 use aw_upscale::Upscaler;
@@ -12,29 +12,28 @@ use image::codecs::png::{CompressionType, FilterType, PngEncoder};
 use image::imageops::{self, overlay};
 use image::{ColorType, GenericImage, ImageBuffer, ImageEncoder, RgbImage, RgbaImage};
 use lru::LruCache;
-use once_cell::sync::{Lazy, OnceCell};
 use tempfile::TempDir;
 
 use crate::closing;
-use crate::config::{ImageProperties, CONFIG};
+use crate::config::{CONFIG, ImageProperties};
 use crate::directories::ids::WallpaperID;
 use crate::monitors::Monitor;
+use crate::processing::resample::FilterType::Lanczos3;
 #[cfg(feature = "opencl")]
 use crate::processing::resample::resize_opencl;
 use crate::processing::resample::resize_par_linear;
-use crate::processing::resample::FilterType::Lanczos3;
 use crate::processing::{UPSCALING, WORKER};
 
 // This is a small cache because the files can get very large.
 // For interactive or preview this is sufficient.
 // For Sync mode it's enough that it'll dedupe reads to the same file almost every time.
-static FILE_CACHE: Lazy<Mutex<LruCache<PathBuf, Arc<OnceCell<RgbImage>>>>> =
-    Lazy::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(5).unwrap())));
+static FILE_CACHE: LazyLock<Mutex<LruCache<PathBuf, Arc<OnceLock<RgbImage>>>>> =
+    LazyLock::new(|| Mutex::new(LruCache::new(NonZeroUsize::new(5).unwrap())));
 
 // This is a larger cache for interactive, preview, and in rare cases random mode.
 // We can skip writing and rereading from disk when we know we're going to set them.
 // For now, these are only "BGRA" images since it only works for X11.
-pub static OPTIMISTIC_CACHE: OnceCell<Mutex<LruCache<PathBuf, RgbaImage>>> = OnceCell::new();
+pub static OPTIMISTIC_CACHE: OnceLock<Mutex<LruCache<PathBuf, RgbaImage>>> = OnceLock::new();
 
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -109,11 +108,11 @@ pub struct Wallpaper<'a, T: WallpaperID> {
     pub id: &'a T,
     monitors: &'a [Monitor],
     parent_tdir: &'a TempDir,
-    tdir: OnceCell<TempDir>,
+    tdir: OnceLock<TempDir>,
     // This could save time and memory during interactive mode, but likely not worth too much.
     // original_image: OnceCell<Arc<DynamicImage>>,
-    resolution: OnceCell<Res>,
-    mtime: OnceCell<SystemTime>,
+    resolution: OnceLock<Res>,
+    mtime: OnceLock<SystemTime>,
 }
 
 impl<'a, T: WallpaperID> Wallpaper<'a, T> {
@@ -122,9 +121,9 @@ impl<'a, T: WallpaperID> Wallpaper<'a, T> {
             id,
             monitors,
             parent_tdir,
-            tdir: OnceCell::new(),
-            resolution: OnceCell::new(),
-            mtime: OnceCell::new(),
+            tdir: OnceLock::new(),
+            resolution: OnceLock::new(),
+            mtime: OnceLock::new(),
         }
     }
 }
@@ -281,11 +280,11 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
             return;
         }
 
-        if let Some(guard) = OPTIMISTIC_CACHE.get() {
-            if let Some(_cached) = guard.lock().unwrap().get(&uf.final_file) {
-                // Return early after nudging the value in the LruCache.
-                return;
-            }
+        if let Some(guard) = OPTIMISTIC_CACHE.get()
+            && let Some(_cached) = guard.lock().unwrap().get(&uf.final_file)
+        {
+            // Return early after nudging the value in the LruCache.
+            return;
         }
 
 
@@ -310,10 +309,10 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                 .into_rgb8()
         }));
 
-        if let Some(ImageProperties { vertical, horizontal, .. }) = uf.props.as_ref() {
-            if vertical.is_some() || horizontal.is_some() {
-                img = translate_image(img, vertical, horizontal);
-            }
+        if let Some(ImageProperties { vertical, horizontal, .. }) = uf.props.as_ref()
+            && (vertical.is_some() || horizontal.is_some())
+        {
+            img = translate_image(img, vertical, horizontal);
         }
 
         let (m_w, m_h) = (uf.m.width, uf.m.height);
@@ -391,7 +390,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         }
     }
 
-    fn get_uncached_files(&self) -> Vec<UncachedFiles> {
+    fn get_uncached_files(&self) -> Vec<UncachedFiles<'_>> {
         let mtime = *self.mtime.get_or_init(|| get_mtime(self.id.original_abs_path()));
 
         let mut dedupe = HashSet::new();

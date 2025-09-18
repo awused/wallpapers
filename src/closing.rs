@@ -1,13 +1,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use once_cell::sync::Lazy;
 #[cfg(unix)]
 use signal_hook::consts::SIGHUP;
 use signal_hook::consts::TERM_SIGNALS;
 use signal_hook::flag;
 
-static CLOSED: Lazy<Arc<AtomicBool>> = Lazy::new(|| Arc::new(AtomicBool::new(false)));
+static CLOSED: LazyLock<Arc<AtomicBool>> = LazyLock::new(|| Arc::new(AtomicBool::new(false)));
 
 pub fn closed() -> bool {
     CLOSED.load(Ordering::Relaxed)

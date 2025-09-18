@@ -6,6 +6,8 @@ use std::fmt::Write;
 use std::fs::{copy, create_dir_all};
 use std::num::{NonZeroI32, NonZeroU32, NonZeroUsize};
 use std::path::{Component, Path, PathBuf};
+#[cfg(feature = "opencl")]
+use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::thread;
 use std::time::Duration;
@@ -14,14 +16,12 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::{History, Input};
 use image::Rgba;
 use lru::LruCache;
-#[cfg(feature = "opencl")]
-use once_cell::sync::Lazy;
 use tokio::select;
 use tokio::sync::mpsc;
-use tokio::time::{interval, MissedTickBehavior};
+use tokio::time::{MissedTickBehavior, interval};
 
-use crate::config::{load_properties, string_to_colour, ImageProperties, Properties, CONFIG};
-use crate::directories::ids::{relative_from_slash, TempWallpaperID, WallpaperID};
+use crate::config::{CONFIG, ImageProperties, Properties, load_properties, string_to_colour};
+use crate::directories::ids::{TempWallpaperID, WallpaperID, relative_from_slash};
 use crate::directories::{
     next_original_for_prefix, next_original_for_wildcard_prefix, next_original_in_dir,
     valid_extension,
@@ -29,7 +29,7 @@ use crate::directories::{
 use crate::monitors::set_wallpapers;
 #[cfg(feature = "opencl")]
 use crate::processing::resample::OPENCL_QUEUE;
-use crate::wallpaper::{Wallpaper, OPTIMISTIC_CACHE};
+use crate::wallpaper::{OPTIMISTIC_CACHE, Wallpaper};
 use crate::{closing, make_tdir, monitors};
 
 #[derive(Debug)]
@@ -129,7 +129,7 @@ pub async fn run(starting_path: &Path) {
 
     #[cfg(feature = "opencl")]
     let cl_spawn_handle = thread::spawn(|| {
-        Lazy::force(&OPENCL_QUEUE);
+        LazyLock::force(&OPENCL_QUEUE);
     });
 
     if monitors::supports_memory_papers() {

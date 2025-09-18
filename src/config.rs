@@ -4,9 +4,9 @@ use std::fs::{create_dir, read_to_string};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::string::ToString;
+use std::sync::LazyLock;
 
 use image::Rgba;
-use once_cell::sync::Lazy;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -247,7 +247,7 @@ fn colour_to_string(c: Rgba<u8>) -> String {
     }
 }
 
-pub static CONFIG: Lazy<Config> = Lazy::new(|| {
+pub static CONFIG: LazyLock<Config> = LazyLock::new(|| {
     let (config, _) =
         awconf::load_config::<Config>("wallpapers", OPTIONS.awconf.as_ref(), None::<&str>)
             .expect("Error loading config");
@@ -351,4 +351,4 @@ pub fn load_properties() -> Properties {
     Properties::deserialize(deserializer).expect("Unable to deserialize properties")
 }
 
-pub static PROPERTIES: Lazy<Properties> = Lazy::new(load_properties);
+pub static PROPERTIES: LazyLock<Properties> = LazyLock::new(load_properties);

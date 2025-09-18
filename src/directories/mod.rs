@@ -3,8 +3,8 @@ use std::ffi::{OsStr, OsString};
 use std::fs;
 use std::io::Error;
 use std::path::Path;
+use std::sync::LazyLock;
 
-use once_cell::sync::Lazy;
 use regex::Regex;
 use walkdir::{DirEntry, WalkDir};
 
@@ -13,8 +13,8 @@ use crate::config::CONFIG;
 
 pub mod ids;
 
-static FILE_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^((.*\D)?)(\d+)\.[a-zA-Z]{3,4}$").unwrap());
+static FILE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^((.*\D)?)(\d+)\.[a-zA-Z]{3,4}$").unwrap());
 
 static EXTENSIONS: [&str; 4] = ["jpg", "jpeg", "png", "bmp"];
 

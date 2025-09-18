@@ -1,7 +1,7 @@
 use std::any::Any;
+use std::sync::LazyLock;
 use std::thread;
 
-use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
 use crate::closing;
@@ -10,7 +10,7 @@ use crate::config::CONFIG;
 pub mod resample;
 
 // Pre- and post- upscaling work shares the same CPU-bound pool
-pub static WORKER: Lazy<ThreadPool> = Lazy::new(|| {
+pub static WORKER: LazyLock<ThreadPool> = LazyLock::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("worker-{u}"))
         .panic_handler(handle_panic)
@@ -18,7 +18,7 @@ pub static WORKER: Lazy<ThreadPool> = Lazy::new(|| {
         .expect("Error creating worker threadpool")
 });
 
-pub static UPSCALING: Lazy<ThreadPool> = Lazy::new(|| {
+pub static UPSCALING: LazyLock<ThreadPool> = LazyLock::new(|| {
     ThreadPoolBuilder::new()
         .thread_name(|u| format!("upscaling-{u}"))
         .panic_handler(handle_panic)

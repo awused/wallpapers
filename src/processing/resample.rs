@@ -4,9 +4,10 @@ use crate::wallpaper::Res;
 
 #[cfg(feature = "opencl")]
 mod opencl {
+    use std::sync::LazyLock;
+
     use ocl::prm::Int2;
     use ocl::{Buffer, Device, DeviceType, Platform, ProQue, flags};
-    use once_cell::sync::Lazy;
 
     use crate::wallpaper::Res;
 
@@ -30,7 +31,7 @@ mod opencl {
         }
     }
 
-    pub static OPENCL_QUEUE: Lazy<ProQue> = Lazy::new(|| {
+    pub static OPENCL_QUEUE: LazyLock<ProQue> = LazyLock::new(|| {
         let resample_src = include_str!("resample.cl");
 
         #[cfg(not(test))]
