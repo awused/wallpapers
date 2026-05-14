@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::fs::{File, create_dir_all};
 use std::num::{NonZeroU8, NonZeroUsize};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, LazyLock, Mutex, OnceLock};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock, RwLock};
 use std::time::SystemTime;
 
 use aw_upscale::Upscaler;
@@ -17,7 +17,7 @@ use tempfile::TempDir;
 use crate::closing;
 use crate::config::{CONFIG, ImageProperties};
 use crate::directories::ids::WallpaperID;
-use crate::monitors::Monitor;
+use crate::monitors::{Monitor, use_xrgb_memory};
 use crate::processing::resample::FilterType::Lanczos3;
 #[cfg(feature = "opencl")]
 use crate::processing::resample::resize_opencl;
@@ -33,7 +33,14 @@ static FILE_CACHE: LazyLock<Mutex<LruCache<PathBuf, Arc<OnceLock<RgbImage>>>>> =
 // This is a larger cache for interactive, preview, and in rare cases random mode.
 // We can skip writing and rereading from disk when we know we're going to set them.
 // For now, these are only "BGRA" images since it only works for X11.
-pub static OPTIMISTIC_CACHE: OnceLock<Mutex<LruCache<PathBuf, RgbaImage>>> = OnceLock::new();
+pub static OPTIMISTIC_CACHE: OnceLock<RwLock<LruCache<PathBuf, RgbaImage>>> = OnceLock::new();
+
+pub fn clear_caches() {
+    FILE_CACHE.lock().unwrap().clear();
+    if let Some(cache) = OPTIMISTIC_CACHE.get() {
+        cache.write().unwrap().clear();
+    }
+}
 
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -107,7 +114,7 @@ struct UncachedFiles<'a> {
 pub struct Wallpaper<'a, T: WallpaperID> {
     pub id: &'a T,
     monitors: &'a [Monitor],
-    parent_tdir: &'a TempDir,
+    parent_tdir: &'a LazyLock<TempDir>,
     tdir: OnceLock<TempDir>,
     // This could save time and memory during interactive mode, but likely not worth too much.
     // original_image: OnceCell<Arc<DynamicImage>>,
@@ -116,7 +123,11 @@ pub struct Wallpaper<'a, T: WallpaperID> {
 }
 
 impl<'a, T: WallpaperID> Wallpaper<'a, T> {
-    pub const fn new(id: &'a T, monitors: &'a [Monitor], parent_tdir: &'a TempDir) -> Self {
+    pub const fn new(
+        id: &'a T,
+        monitors: &'a [Monitor],
+        parent_tdir: &'a LazyLock<TempDir>,
+    ) -> Self {
         Self {
             id,
             monitors,
@@ -281,7 +292,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         }
 
         if let Some(guard) = OPTIMISTIC_CACHE.get()
-            && let Some(_cached) = guard.lock().unwrap().get(&uf.final_file)
+            && let Some(_cached) = guard.write().unwrap().get(&uf.final_file)
         {
             // Return early after nudging the value in the LruCache.
             return;
@@ -378,15 +389,24 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         }
 
         if let Some(guard) = OPTIMISTIC_CACHE.get() {
-            // For now, only X11 supports this and it needs BGRA.
+            // X11 and wayland both want something different.
             let mut swizzled = RgbaImage::new(img.width(), img.height());
-            for (s, i) in swizzled.chunks_exact_mut(4).zip(img.chunks_exact(3)) {
-                s[0] = i[2];
-                s[1] = i[1];
-                s[2] = i[0];
-                s[3] = 255;
+            if use_xrgb_memory() {
+                for (s, i) in swizzled.chunks_exact_mut(4).zip(img.chunks_exact(3)) {
+                    s[0] = 255;
+                    s[1] = i[0];
+                    s[2] = i[1];
+                    s[3] = i[2];
+                }
+            } else {
+                for (s, i) in swizzled.chunks_exact_mut(4).zip(img.chunks_exact(3)) {
+                    s[0] = i[2];
+                    s[1] = i[1];
+                    s[2] = i[0];
+                    s[3] = 255;
+                }
             }
-            guard.lock().unwrap().put(uf.final_file.clone(), swizzled);
+            guard.write().unwrap().put(uf.final_file.clone(), swizzled);
         }
     }
 

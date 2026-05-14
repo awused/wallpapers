@@ -11,16 +11,18 @@ use std::fs::{remove_dir, remove_file};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, RwLock};
 use std::thread;
 
 use aw_shuffle::AwShuffler;
 use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::{Options, PersistentShuffler};
 use clap::Parser;
+use color_eyre::Result;
 use config::{ImageProperties, PROPERTIES, string_to_colour};
 use crossbeam_utils::thread::scope;
 use directories::ids::{TempWallpaperID, WallpaperID};
+use futures::executor::block_on;
 use lru::LruCache;
 use monitors::Monitor;
 #[cfg(feature = "opencl")]
@@ -32,10 +34,13 @@ use wallpaper::OPTIMISTIC_CACHE;
 
 use crate::config::CONFIG;
 use crate::directories::get_all_originals;
+use crate::monitors::Connection;
 use crate::wallpaper::Wallpaper;
 
 pub(crate) mod closing;
 mod config;
+#[cfg(unix)]
+mod daemon;
 mod directories;
 mod interactive;
 pub(crate) mod monitors;
@@ -60,6 +65,9 @@ pub struct Opt {
 enum Command {
     /// Display a random wallpaper on each monitor.
     Random,
+    /// Run as a pseudo-daemon, listening for updates on SIGUSR1.
+    #[cfg(unix)]
+    Daemon,
     /// Prepopulate the cache of stale files and remove stale files.
     Sync {
         /// Also remove all wallpapers for resolutions that don't match any current monitors.
@@ -125,9 +133,15 @@ pub static OPTIONS: LazyLock<Opt> = LazyLock::new(Opt::parse);
 
 fn main() {
     closing::init();
+    color_eyre::install().unwrap();
 
     match &OPTIONS.cmd {
-        Command::Random {} => random(),
+        Command::Random => {
+            let mut con = monitors::init();
+            block_on(random(&mut con)).unwrap();
+        }
+        #[cfg(unix)]
+        Command::Daemon => daemon::run(),
         Command::Sync { clean_monitors } => sync(*clean_monitors),
         Command::Preview {
             vertical,
@@ -158,7 +172,7 @@ fn main() {
             preview(file, props);
         }
         Command::Interactive { file } => {
-            interactive::run(file);
+            interactive::run(file).unwrap();
         }
         Command::ListMonitors => print_monitors(),
         #[cfg(feature = "opencl")]
@@ -166,25 +180,26 @@ fn main() {
     }
 }
 
-fn random() {
-    let tdir = make_tdir();
 
-    let monitors = monitors::list();
+async fn random(con: &mut Connection) -> Result<()> {
+    let tdir = LazyLock::new(make_tdir as _);
+
+    let monitors = con.list_monitors().await?;
     if monitors.is_empty() {
         println!("No monitors detected");
-        return;
+        return Ok(());
     }
 
-    let wallpapers = get_all_originals().unwrap();
+    let wallpapers = get_all_originals()?;
     if wallpapers.is_empty() {
         println!("No wallpapers found");
-        return;
+        return Ok(());
     }
 
     // This will only be beneficial on cache misses, but can't hurt.
     if monitors::supports_memory_papers() {
         OPTIMISTIC_CACHE.get_or_init(|| {
-            Mutex::new(LruCache::new(NonZeroUsize::new(monitors.len() * 3).unwrap()))
+            RwLock::new(LruCache::new(NonZeroUsize::new(monitors.len() * 3).unwrap()))
         });
     }
 
@@ -192,7 +207,6 @@ fn random() {
     let mut shuffler = Shuffler::new(&CONFIG.database, options, Some(wallpapers)).unwrap();
 
     // https://github.com/rust-lang/rust-clippy/issues/9219
-    #[allow(clippy::needless_collect)]
     let selection: Vec<_> = shuffler
         .try_unique_n(monitors.len())
         .unwrap()
@@ -204,12 +218,13 @@ fn random() {
         shuffler.close().unwrap();
     });
 
+
     // Merge any duplicate wallpapers.
     let mut wids = Vec::new();
     let mut grouped_monitors: Vec<Vec<_>> = Vec::new();
 
     // O(n^2) but the real number of monitors will always be tiny
-    'outer: for (wid, m) in selection.into_iter().zip(monitors.into_iter()) {
+    'outer: for (wid, m) in selection.into_iter().zip(monitors) {
         for (i, w) in wids.iter().enumerate() {
             if wid == *w {
                 grouped_monitors[i].push(m);
@@ -222,7 +237,7 @@ fn random() {
     }
 
     if closing::closed() {
-        return;
+        return Ok(());
     }
 
     assert_eq!(wids.len(), grouped_monitors.len());
@@ -233,16 +248,18 @@ fn random() {
     });
 
     if !closing::closed() {
-        monitors::set_wallpapers(combined.as_slice(), false);
+        con.set_wallpapers(combined.as_slice(), false).await?;
     }
 
     close_handle.join().unwrap();
+    Ok(())
 }
 
 fn sync(clean_monitors: bool) {
-    let tdir = make_tdir();
+    let tdir = LazyLock::new(make_tdir as _);
 
-    let monitors = monitors::list();
+    let mut con = monitors::init();
+    let monitors = block_on(con.list_monitors()).unwrap();
     if monitors.is_empty() {
         println!("No monitors detected");
         return;
@@ -324,7 +341,7 @@ fn sync(clean_monitors: bool) {
         }
     });
 
-    let mut props_copy = PROPERTIES.clone();
+    let mut props_copy = PROPERTIES.read().unwrap().clone();
     for w in wallpapers {
         props_copy.remove(w.slash_path());
     }
@@ -339,9 +356,9 @@ fn sync(clean_monitors: bool) {
 }
 
 fn preview(path: &Path, props: ImageProperties) {
-    let tdir = make_tdir();
-
-    let monitors = monitors::list();
+    let tdir = LazyLock::new(make_tdir as _);
+    let mut con = monitors::init();
+    let monitors = block_on(con.list_monitors()).unwrap();
     if monitors.is_empty() {
         println!("No monitors detected");
         return;
@@ -354,7 +371,7 @@ fn preview(path: &Path, props: ImageProperties) {
 
     if monitors::supports_memory_papers() {
         OPTIMISTIC_CACHE.get_or_init(|| {
-            Mutex::new(LruCache::new(NonZeroUsize::new(monitors.len() * 3).unwrap()))
+            RwLock::new(LruCache::new(NonZeroUsize::new(monitors.len() * 3).unwrap()))
         });
     }
 
@@ -363,7 +380,7 @@ fn preview(path: &Path, props: ImageProperties) {
     w.process(false);
 
     if !closing::closed() {
-        monitors::set_wallpapers(&[(&wid, &monitors)], true);
+        con.set_wallpapers(&[(&wid, &monitors)], true);
     }
 
     #[cfg(feature = "opencl")]
@@ -371,7 +388,8 @@ fn preview(path: &Path, props: ImageProperties) {
 }
 
 fn print_monitors() {
-    let monitors = monitors::list();
+    let mut con = monitors::init();
+    let monitors = block_on(con.list_monitors()).unwrap();
     if monitors.is_empty() {
         println!("No monitors detected");
         return;

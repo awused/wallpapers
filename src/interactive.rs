@@ -1,17 +1,17 @@
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, VecDeque};
 use std::convert::Into;
+use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt::Write;
 use std::fs::{copy, create_dir_all};
 use std::num::{NonZeroI32, NonZeroU32, NonZeroUsize};
 use std::path::{Component, Path, PathBuf};
-#[cfg(feature = "opencl")]
-use std::sync::LazyLock;
-use std::sync::Mutex;
+use std::sync::{LazyLock, RwLock};
 use std::thread;
 use std::time::Duration;
 
+use color_eyre::Result;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{History, Input};
 use image::Rgba;
@@ -26,7 +26,6 @@ use crate::directories::{
     next_original_for_prefix, next_original_for_wildcard_prefix, next_original_in_dir,
     valid_extension,
 };
-use crate::monitors::set_wallpapers;
 #[cfg(feature = "opencl")]
 use crate::processing::resample::OPENCL_QUEUE;
 use crate::wallpaper::{OPTIMISTIC_CACHE, Wallpaper};
@@ -118,13 +117,14 @@ impl Command {
 
 
 #[tokio::main(flavor = "current_thread")]
-pub async fn run(starting_path: &Path) {
-    let tdir = make_tdir();
+pub async fn run(starting_path: &Path) -> Result<()> {
+    let tdir = LazyLock::new(make_tdir as _);
+    let mut con = monitors::init();
 
-    let monitors = monitors::list();
+    let monitors = con.list_monitors().await?;
     if monitors.is_empty() {
         println!("No monitors detected");
-        return;
+        return Ok(());
     }
 
     #[cfg(feature = "opencl")]
@@ -134,7 +134,7 @@ pub async fn run(starting_path: &Path) {
 
     if monitors::supports_memory_papers() {
         OPTIMISTIC_CACHE.get_or_init(|| {
-            Mutex::new(LruCache::new(NonZeroUsize::new(monitors.len() * 3).unwrap()))
+            RwLock::new(LruCache::new(NonZeroUsize::new(monitors.len() * 3).unwrap()))
         });
     }
 
@@ -167,9 +167,9 @@ pub async fn run(starting_path: &Path) {
     let wallpaper = Wallpaper::new(&wid, &monitors, &tdir);
     wallpaper.process(false);
     if closing::closed() {
-        return;
+        return Ok(());
     }
-    set_wallpapers(&[(&wid, &monitors)], true);
+    con.set_wallpapers(&[(&wid, &monitors)], true);
 
     // It'll be done by now, just join it to be certain.
     #[cfg(feature = "opencl")]
@@ -193,12 +193,17 @@ pub async fn run(starting_path: &Path) {
                 if let Some(cmds) = cmds {
                      cmds
                 } else {
-                     return;
+                     return Ok(());
                 }
-            }
+            },
+            res = con.poll() => {
+                res?;
+                // This could handle adding new monitors
+                unreachable!();
+            },
             _ = ticker.tick() => {
                 if closing::closed() {
-                    return;
+                    return Ok(());
                 }
                 continue;
             }
@@ -249,7 +254,7 @@ pub async fn run(starting_path: &Path) {
                 Command::Print => {
                     println!("{props}");
                 }
-                Command::Exit => return,
+                Command::Exit => return Ok(()),
                 Command::Invalid => {
                     println!("Invalid command");
                     // TODO -- help
@@ -264,9 +269,9 @@ pub async fn run(starting_path: &Path) {
             // println!("process {:?}", start.elapsed());
             // let set = Instant::now();
             if closing::closed() {
-                return;
+                return Ok(());
             }
-            set_wallpapers(&[(&wid, &monitors)], true);
+            con.set_wallpapers(&[(&wid, &monitors)], true).await?;
             // println!("set {:?} / {:?}", set.elapsed(), start.elapsed());
         }
 
@@ -309,7 +314,7 @@ fn install(rel: PathBuf, original: &Path) -> Option<PathBuf> {
 
         // Empty file name, like when the user types "existing_or_new_dir/"
         // If a new directory is provided, use the empty string as the prefix.
-        (None, Some(e)) if dest.file_name().map_or(true, |n| n == "*") => {
+        (None, Some(e)) if dest.file_name().is_none_or(|n| n == "*") => {
             let dir = dest.parent()?;
             let Some((mut p, n, digits)) = next_original_in_dir(dir) else {
                 println!("Could not determine name for next file in {dir:?}");

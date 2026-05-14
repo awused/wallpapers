@@ -4,7 +4,7 @@ use std::fs::{create_dir, read_to_string};
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::string::ToString;
-use std::sync::LazyLock;
+use std::sync::{LazyLock, RwLock};
 
 use image::Rgba;
 use serde::ser::SerializeMap;
@@ -73,7 +73,7 @@ pub struct ImageProperties {
     #[serde(flatten)]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     #[serde(serialize_with = "skip_nested_empties")]
-    pub nested: BTreeMap<String, BTreeMap<String, ImageProperties>>,
+    pub nested: BTreeMap<String, BTreeMap<String, Self>>,
 }
 
 impl Display for ImageProperties {
@@ -91,7 +91,7 @@ impl Display for ImageProperties {
         ];
         FIELDS
             .iter()
-            .zip(values.into_iter())
+            .zip(values)
             .filter_map(|(a, b)| b.as_ref().map(|b| (a, b)))
             .map(|(a, b)| writeln!(f, "{a} = {b}"))
             .collect::<Result<Vec<_>, _>>()?;
@@ -128,7 +128,7 @@ impl ImageProperties {
             && self.right.is_none()
             && self.background.is_none()
         {
-            return "".into();
+            return String::new();
         }
 
         [
@@ -136,10 +136,9 @@ impl ImageProperties {
             self.bottom.unwrap_or_default().to_string(),
             self.left.unwrap_or_default().to_string(),
             self.right.unwrap_or_default().to_string(),
-            self.background.map_or_else(
-                || "".to_string(),
-                |v| v[0].to_string() + &v[1].to_string() + &v[2].to_string() + &v[3].to_string(),
-            ),
+            self.background.map_or_else(String::new, |v| {
+                v[0].to_string() + &v[1].to_string() + &v[2].to_string() + &v[3].to_string()
+            }),
         ]
         .join(",")
     }
@@ -170,7 +169,7 @@ impl ImageProperties {
         self.full_string().is_empty()
     }
 
-    pub fn copy_from(&mut self, other: &Self) {
+    pub const fn copy_from(&mut self, other: &Self) {
         self.vertical = other.vertical;
         self.horizontal = other.horizontal;
         self.top = other.top;
@@ -351,4 +350,4 @@ pub fn load_properties() -> Properties {
     Properties::deserialize(deserializer).expect("Unable to deserialize properties")
 }
 
-pub static PROPERTIES: LazyLock<Properties> = LazyLock::new(load_properties);
+pub static PROPERTIES: RwLock<LazyLock<Properties>> = RwLock::new(LazyLock::new(load_properties));

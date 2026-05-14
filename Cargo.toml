@@ -16,8 +16,10 @@ awconf = { git = "https://github.com/awused/awconf" }
 aw-shuffle = { git = "https://github.com/awused/aw-shuffle", features = [ "rocks" ] }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
 clap = { version = "4.5.47", features = ["derive"] }
+color-eyre = "0.6.5"
 crossbeam-utils = "0.8.21"
 dialoguer = { version = "0.12.0", default-features = false, features = [ "history" ] }
+futures = "0.3.31"
 image = { version = "0.25.8", default-features = false, features = [ "jpeg", "png", "bmp" ] }
 lru = { version = "0.16.1", default-features = false }
 num_cpus = "1.17.0"
@@ -34,8 +36,11 @@ walkdir = "2.5.0"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.175"
-futures = "0.3.31"
+signal-hook-tokio = { version = "0.3.1", features = [ "futures-v0_3" ] }
 tikv-jemallocator = { version = "0.6.0", features = [ "background_threads" ] }
+wayland-client = "0.31.14"
+wayland-protocols = { version = "0.32.12", features = ["client", "staging"] }
+wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 x11 = "2.21.0"
 
 [target.'cfg(windows)'.dependencies]

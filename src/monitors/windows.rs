@@ -11,6 +11,13 @@ use windows::core::PCWSTR;
 
 use crate::directories::ids::WallpaperID;
 
+pub struct Connection {}
+
+
+pub fn init() -> Connection {
+    Connection {}
+}
+
 #[derive(Debug, Clone)]
 pub struct Monitor {
     pub width: u32,
@@ -51,74 +58,83 @@ unsafe fn get_monitor(dtop: &IDesktopWallpaper, n: u32) -> Result<Option<Monitor
 }
 
 
-pub fn supports_memory_papers() -> bool {
+pub const fn supports_memory_papers() -> bool {
     false
 }
 
-// In error cases this can leak but we'll be closing the program anyway.
-pub fn list() -> Vec<Monitor> {
-    let monitors: Result<_, io::Error> = (|| unsafe {
-        CoInitialize(None).unwrap();
-
-        let mut monitors = Vec::new();
-
-        let desktop: IDesktopWallpaper =
-            CoCreateInstance(&DesktopWallpaper, None, CLSCTX_LOCAL_SERVER)?;
-
-        let monitor_count = desktop.GetMonitorDevicePathCount()?;
-
-        for n in 0..monitor_count {
-            if let Some(m) = get_monitor(&desktop, n)? {
-                monitors.push(m);
-            }
-        }
-
-        drop(desktop);
-        CoUninitialize();
-        Ok(monitors)
-    })();
-
-    match monitors {
-        Ok(v) => v,
-        Err(e) => {
-            println!("Error getting list of monitors: {e}");
-            Vec::new()
-        }
-    }
+pub const fn use_xrgb_memory() -> bool {
+    false
 }
 
-pub fn set_wallpapers(wallpapers: &[(&impl WallpaperID, &[Monitor])], _temp: bool) {
-    // TODO -- maybe set legacy registry keys. Likely useless but I want to be sure.
+impl Connection {
+    // In error cases this can leak but we'll be closing the program anyway.
+    pub async fn list_monitors(&mut self) -> color_eyre::Result<Vec<Monitor>> {
+        let monitors: Result<_, io::Error> = (|| unsafe {
+            CoInitialize(None).unwrap();
 
-    let wallmons: Vec<_> = wallpapers
-        .iter()
-        .flat_map(move |(wid, ms)| ms.iter().map(move |m| (wid, m)))
-        .collect();
+            let mut monitors = Vec::new();
 
-    let r: Result<_, io::Error> = (|| unsafe {
-        CoInitialize(None).unwrap();
+            let desktop: IDesktopWallpaper =
+                CoCreateInstance(&DesktopWallpaper, None, CLSCTX_LOCAL_SERVER)?;
 
-        let desktop: IDesktopWallpaper =
-            CoCreateInstance(&DesktopWallpaper, None, CLSCTX_LOCAL_SERVER)?;
+            let monitor_count = desktop.GetMonitorDevicePathCount()?;
 
+            for n in 0..monitor_count {
+                if let Some(m) = get_monitor(&desktop, n)? {
+                    monitors.push(m);
+                }
+            }
 
-        desktop.SetPosition(DWPOS_CENTER)?;
+            drop(desktop);
+            CoUninitialize();
+            Ok(monitors)
+        })();
 
-        for (wid, m) in wallmons {
-            let u16_path = U16CString::from_os_str(wid.cached_abs_path(m, &wid.get_props(m)))
-                .expect("Invalid wallpaper path containing null");
-            desktop.SetWallpaper(PCWSTR(m.path.as_ptr()), PCWSTR(u16_path.as_ptr()))?;
-        }
-
-        drop(desktop);
-        CoUninitialize();
-        Ok(())
-    })();
-    if let Err(e) = r {
-        println!("{e}");
+        Ok(monitors?)
     }
 
-    // If the temporary files are cleaned up too fast Windows will fail to change the wallpaper.
-    // 5 seconds is more than enough time for Windows to finish or fail.
-    thread::sleep(Duration::from_secs(5));
+    pub async fn set_wallpapers(
+        &mut self,
+        wallpapers: &[(&impl WallpaperID, &[Monitor])],
+        _temp: bool,
+    ) -> color_eyre::Result<()> {
+        // TODO -- maybe set legacy registry keys. Likely useless but I want to be sure.
+
+        let wallmons: Vec<_> = wallpapers
+            .iter()
+            .flat_map(move |(wid, ms)| ms.iter().map(move |m| (wid, m)))
+            .collect();
+
+        let r: Result<_, io::Error> = (|| unsafe {
+            CoInitialize(None).unwrap();
+
+            let desktop: IDesktopWallpaper =
+                CoCreateInstance(&DesktopWallpaper, None, CLSCTX_LOCAL_SERVER)?;
+
+
+            desktop.SetPosition(DWPOS_CENTER)?;
+
+            for (wid, m) in wallmons {
+                let u16_path = U16CString::from_os_str(wid.cached_abs_path(m, &wid.get_props(m)))
+                    .expect("Invalid wallpaper path containing null");
+                desktop.SetWallpaper(PCWSTR(m.path.as_ptr()), PCWSTR(u16_path.as_ptr()))?;
+            }
+
+            drop(desktop);
+            CoUninitialize();
+            Ok(())
+        })();
+        if let Err(e) = r {
+            println!("{e}");
+        }
+
+        // If the temporary files are cleaned up too fast Windows will fail to change the wallpaper.
+        // 5 seconds is more than enough time for Windows to finish or fail.
+        thread::sleep(Duration::from_secs(5));
+        Ok(())
+    }
+
+    pub async fn poll(&mut self) -> color_eyre::Result<()> {
+        std::future::pending().await
+    }
 }

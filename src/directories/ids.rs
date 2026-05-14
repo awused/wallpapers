@@ -3,12 +3,12 @@ use std::num::NonZeroU8;
 #[cfg(windows)]
 use std::path::Component;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::{LazyLock, RwLock};
 
 use serde::{Deserialize, Serialize};
 use tempfile::TempDir;
 
-use crate::config::{ImageProperties, CONFIG, PROPERTIES};
+use crate::config::{CONFIG, ImageProperties, PROPERTIES};
 use crate::monitors::Monitor;
 
 pub trait WallpaperID: Send + Sync + std::fmt::Debug {
@@ -69,7 +69,8 @@ impl WallpaperID for OriginalWallpaperID {
         let a_x = (m.width / a).to_string();
         let a_y = (m.height / a).to_string();
 
-        let props = PROPERTIES.get(&self.0)?;
+        let guard = PROPERTIES.read().unwrap();
+        let props = guard.get(&self.0)?;
 
         let per_monitor = props.nested.get(&a_x).and_then(|m| m.get(&a_y));
         if let Some(monprops) = per_monitor {
@@ -124,12 +125,12 @@ pub struct TempWallpaperID<'a> {
     fname: PathBuf,
     // This could safely use UnsafeCell
     pub props: RwLock<ImageProperties>,
-    tdir: &'a TempDir,
+    tdir: &'a LazyLock<TempDir>,
 }
 
 
 impl<'a> TempWallpaperID<'a> {
-    pub fn new<P: AsRef<Path>>(p: P, props: ImageProperties, tdir: &'a TempDir) -> Self {
+    pub fn new<P: AsRef<Path>>(p: P, props: ImageProperties, tdir: &'a LazyLock<TempDir>) -> Self {
         Self {
             path: RwLock::new(p.as_ref().to_path_buf()),
             fname: p.as_ref().file_name().expect("Wallpaper has no filename").into(),

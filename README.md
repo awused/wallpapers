@@ -1,15 +1,17 @@
 Wallpapers
 ==========
 
-A tool for managing and shuffling a large number of wallpapers across multiple monitors, using waifu2x for upscaling. Runs on Windows 8 and up and Linux (X11, non-gnome).
+A tool for managing and shuffling a large number of wallpapers across multiple monitors, using waifu2x for upscaling. Runs on Windows 8 and up and Linux.
 
 # Requirements
 
 * Windows 8+.
     * Newer APIs added after Windows 7 remove the need for hacky workarounds.
 * Linux:
-    * Currently only works on X11.
-    * Does not work on Gnome. Doesn't use feh but should work where feh works.
+    * Works on X11 and Wayland.
+      * Tested on Sway, other wlroots-based compositors should work
+      * Non-wlroots compositors will not work.
+    * Does not work on Gnome.
 
 Upscaling has additional default requirements, but can be configured to use others:
 
@@ -39,6 +41,10 @@ Run `wallpapers sync` to prepopulate the cache for your current set of wallpaper
 
 I've included some scripts and registry files for context menu entries that I find useful under [windows](windows) and [linux](linux). They must be edited before use.
 
+## Wayland
+
+
+
 ## Commands
 ### Random
 
@@ -48,13 +54,14 @@ The random command will set one random wallpaper randomly on each monitor. It fa
 
 If one of the selected wallpapers hasn't been cached it will perform the same upscaling and caching as sync. If you're running this as part of a periodic task or cron job this can interrupt whatever you are doing by stressing your GPU, so it's recommended to run sync manually so you can control the timing.
 
+On wayland this requires that `wallpapers daemon` is already running and it is equivalent to `pkill -x -USR1 wallpapers`, which is a more efficient option in scripts or cron jobs.
 
-### Preview
 
-`wallpapers preview wallpaper.jpg`
+### Daemon
 
-The preview command is used to show you what a wallpaper will look like after processing. Using different flags it's possible to set all the same image manipulation values that are available in the config file, allowing you to dial in the specific settings you want. See `wallpapers preview -h` for more details.
+`wallpapers wayland-daemon`
 
+Wayland only, starts up a long-running background process in the current Wayland session to manage wallpapers. This is meant to be started up once 
 
 ### Sync
 
@@ -65,13 +72,21 @@ The sync will prepopulate the cache for the currently selected set of monitors a
 One thing sync does not do by default is remove cached images for monitors that are no longer attached. If you have a laptop that you connect periodically to a 4K monitor, those 4K images will be untouched. You'll need to specify `--clean_monitors` to delete them.
 
 
-## Interactive
+### Interactive
 
 `wallpapers interactive wallpaper.jpg`
 
 Interactively preview a wallpaper on all your monitors, reusing processed files so you can quickly dial in your settings. Using `vertical` and `horizontal` offsets are more efficient than cropping for this as changes will not need to be run through waifu2x. Use the print command to print out a snippet of TOML that can be copied into the configuration file. Multiple commands can be run at once if they're separated by ";", e.g. "h 10; v 10".
 
 On Windows you'll want probably want to build a separate executable without hiding the console. This can be done by not specifying `--features windows-quiet`. The other option is to use a wrapper program when calling wallpapers.exe from a scheduled task.
+
+### Preview
+
+`wallpapers preview wallpaper.jpg`
+
+The preview command is used to show you what a wallpaper will look like after processing. Using different flags it's possible to set all the same image manipulation values that are available in the config file, allowing you to dial in the specific settings you want. See `wallpapers preview -h` for more details.
+
+Not yet implemented for Wayland, may be dropped as `interactive` is generally superior.
 
 
 # Image Manipulation
