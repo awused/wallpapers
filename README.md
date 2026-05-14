@@ -10,7 +10,7 @@ A tool for managing and shuffling a large number of wallpapers across multiple m
 * Linux:
     * Works on X11 and Wayland.
       * Tested on Sway, other wlroots-based compositors should work
-      * Non-wlroots compositors will not work.
+      * Non-wlroots compositors will likely not work.
     * Does not work on Gnome.
 
 Upscaling has additional default requirements, but can be configured to use others:
@@ -54,14 +54,19 @@ The random command will set one random wallpaper randomly on each monitor. It fa
 
 If one of the selected wallpapers hasn't been cached it will perform the same upscaling and caching as sync. If you're running this as part of a periodic task or cron job this can interrupt whatever you are doing by stressing your GPU, so it's recommended to run sync manually so you can control the timing.
 
-On wayland this requires that `wallpapers daemon` is already running and it is equivalent to `pkill -x -USR1 wallpapers`, which is a more efficient option in scripts or cron jobs.
+On Wayland this requires that `wallpapers daemon` is already running and it is equivalent to `pkill -x -H -USR1 wallpapers`, which is a more efficient option in scripts or cron jobs.
 
 
 ### Daemon
 
-`wallpapers wayland-daemon`
+`wallpapers daemon`
 
-Wayland only, starts up a long-running background process in the current Wayland session to manage wallpapers. This is meant to be started up once 
+Wayland only, starts up a long-running background process in the current Wayland session to manage wallpapers. This is meant to be started up once per session after disabling other wallpaper programs.
+
+```
+swaybg_command -
+exec_always "killall wallpapers; wallpapers daemon"
+```
 
 ### Sync
 
@@ -86,7 +91,7 @@ On Windows you'll want probably want to build a separate executable without hidi
 
 The preview command is used to show you what a wallpaper will look like after processing. Using different flags it's possible to set all the same image manipulation values that are available in the config file, allowing you to dial in the specific settings you want. See `wallpapers preview -h` for more details.
 
-Not yet implemented for Wayland, may be dropped as `interactive` is generally superior.
+Not supported for Wayland, may be dropped as `interactive` is generally superior.
 
 
 # Image Manipulation

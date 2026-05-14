@@ -17,7 +17,7 @@ use tempfile::TempDir;
 use crate::closing;
 use crate::config::{CONFIG, ImageProperties};
 use crate::directories::ids::WallpaperID;
-use crate::monitors::{Monitor, use_xrgb_memory};
+use crate::monitors::Monitor;
 use crate::processing::resample::FilterType::Lanczos3;
 #[cfg(feature = "opencl")]
 use crate::processing::resample::resize_opencl;
@@ -389,22 +389,13 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
         }
 
         if let Some(guard) = OPTIMISTIC_CACHE.get() {
-            // X11 and wayland both want something different.
+            // X11 and wayland both want BGRA/X, premultiplied.
             let mut swizzled = RgbaImage::new(img.width(), img.height());
-            if use_xrgb_memory() {
-                for (s, i) in swizzled.chunks_exact_mut(4).zip(img.chunks_exact(3)) {
-                    s[0] = 255;
-                    s[1] = i[0];
-                    s[2] = i[1];
-                    s[3] = i[2];
-                }
-            } else {
-                for (s, i) in swizzled.chunks_exact_mut(4).zip(img.chunks_exact(3)) {
-                    s[0] = i[2];
-                    s[1] = i[1];
-                    s[2] = i[0];
-                    s[3] = 255;
-                }
+            for (s, i) in swizzled.chunks_exact_mut(4).zip(img.chunks_exact(3)) {
+                s[0] = i[2];
+                s[1] = i[1];
+                s[2] = i[0];
+                s[3] = 255;
             }
             guard.write().unwrap().put(uf.final_file.clone(), swizzled);
         }

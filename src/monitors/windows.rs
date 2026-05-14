@@ -62,10 +62,6 @@ pub const fn supports_memory_papers() -> bool {
     false
 }
 
-pub const fn use_xrgb_memory() -> bool {
-    false
-}
-
 impl Connection {
     // In error cases this can leak but we'll be closing the program anyway.
     pub async fn list_monitors(&mut self) -> color_eyre::Result<Vec<Monitor>> {
@@ -136,5 +132,9 @@ impl Connection {
 
     pub async fn poll(&mut self) -> color_eyre::Result<()> {
         std::future::pending().await
+    }
+
+    pub const fn requires_persistence(&self) -> bool {
+        false
     }
 }

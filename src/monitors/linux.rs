@@ -1,25 +1,11 @@
-use core::slice;
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-use std::error::Error;
-use std::ffi::CString;
-use std::path::PathBuf;
-use std::sync::Arc;
+use std::future;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::{env, future, mem, ptr};
 
 use color_eyre::Result;
-use futures::executor::block_on;
-use futures::stream::FuturesUnordered;
-use futures::{StreamExt, TryFutureExt};
-use image::RgbaImage;
-use lru::LruCache;
-use tokio::sync::oneshot;
-use x11::{xinerama, xlib, xrandr};
 
 use crate::directories::ids::WallpaperID;
-use crate::processing::WORKER;
-use crate::wallpaper::OPTIMISTIC_CACHE;
 
 mod wayland;
 mod xorg;
@@ -30,10 +16,6 @@ pub const fn supports_memory_papers() -> bool {
     true
 }
 
-pub fn use_xrgb_memory() -> bool {
-    IS_WAYLAND.load(Ordering::Relaxed)
-}
-
 #[allow(clippy::large_enum_variant)]
 enum Kind {
     Wayland(wayland::Conn),
@@ -41,7 +23,6 @@ enum Kind {
 }
 
 pub struct Connection(Kind);
-
 
 pub fn init() -> Connection {
     if let Some(wayland) = wayland::init() {
@@ -66,7 +47,7 @@ pub struct Monitor {
 impl Connection {
     pub async fn list_monitors(&mut self) -> Result<Vec<Monitor>> {
         match &mut self.0 {
-            Kind::Wayland(wayland_connection) => wayland_connection.list_monitors().await,
+            Kind::Wayland(wcon) => wcon.list_monitors().await,
             Kind::X => Ok(xorg::list_monitors()),
         }
     }
@@ -87,12 +68,11 @@ impl Connection {
             }
         }
 
-        match &self.0 {
-            Kind::Wayland(wayland_connection) => todo!(),
+        match &mut self.0 {
+            Kind::Wayland(wcon) => wcon.set_wallpapers(paths_monitors).await,
             Kind::X => {
                 // Load all uncached wallpapers and convert each one into an XImage.
-                xorg::set_wallpapers(paths_monitors).await;
-                Ok(())
+                xorg::set_wallpapers(paths_monitors).await
             }
         }
     }
@@ -101,8 +81,15 @@ impl Connection {
     // unexpectedly closed.
     pub async fn poll(&mut self) -> Result<()> {
         match &mut self.0 {
-            Kind::Wayland(connection) => connection.poll().await,
+            Kind::Wayland(wcon) => wcon.poll().await,
             Kind::X => future::pending().await,
+        }
+    }
+
+    pub const fn requires_persistence(&self) -> bool {
+        match &self.0 {
+            Kind::Wayland(_) => true,
+            Kind::X => false,
         }
     }
 }

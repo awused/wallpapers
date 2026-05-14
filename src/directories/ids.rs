@@ -57,6 +57,7 @@ impl WallpaperID for OriginalWallpaperID {
         p.into()
     }
 
+    #[allow(clippy::significant_drop_tightening)]
     fn get_props(&self, m: &Monitor) -> Option<ImageProperties> {
         let (mut a, mut b) = (m.width, m.height);
 

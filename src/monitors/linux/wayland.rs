@@ -1,18 +1,31 @@
-use std::collections::BTreeMap;
-use std::error::Error;
-use std::ffi::os_str::Display;
+use std::collections::{BTreeMap, HashMap};
+use std::ffi::CString;
+use std::os::fd::BorrowedFd;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
+use std::{mem, process, ptr};
 
 use color_eyre::Result;
-use serde::{Deserialize, Serialize};
+use color_eyre::eyre::bail;
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
+use image::RgbaImage;
+use libc::{
+    MAP_SHARED, O_CREAT, O_EXCL, O_RDWR, PROT_READ, PROT_WRITE, close, ftruncate, shm_open,
+    shm_unlink,
+};
+use nix::errno::Errno;
 use tokio::io::unix::AsyncFd;
-use tokio::time::timeout;
+use tokio::select;
+use tokio::sync::oneshot;
+use tokio::time::{Instant, sleep_until, timeout};
 use wayland_client::protocol::wl_buffer::WlBuffer;
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_output::{self, WlOutput};
 use wayland_client::protocol::wl_region::WlRegion;
 use wayland_client::protocol::wl_registry::{self, WlRegistry};
-use wayland_client::protocol::wl_shm::WlShm;
+use wayland_client::protocol::wl_shm::{Format, WlShm};
 use wayland_client::protocol::wl_shm_pool::WlShmPool;
 use wayland_client::protocol::wl_surface::WlSurface;
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop};
@@ -27,8 +40,10 @@ use wayland_protocols_wlr::layer_shell::v1::client::zwlr_layer_surface_v1::{
     self, Anchor, ZwlrLayerSurfaceV1,
 };
 
-use crate::closing::{close, closed};
+use crate::closing::closed;
 use crate::monitors::Monitor;
+use crate::processing::WORKER;
+use crate::wallpaper::OPTIMISTIC_CACHE;
 
 pub fn init() -> Option<Conn> {
     let con = Connection::connect_to_env().ok()?;
@@ -37,7 +52,6 @@ pub fn init() -> Option<Conn> {
     let queue = con.new_event_queue();
     let _registry = display.get_registry(&queue.handle(), ());
 
-    println!("got wayland");
     Some(Conn {
         queue,
         _registry,
@@ -45,8 +59,8 @@ pub fn init() -> Option<Conn> {
     })
 }
 
+#[derive(Debug)]
 struct Output {
-    name: u32,
     wl_output: WlOutput,
     fract_scale: Option<WpFractionalScaleV1>,
     surface: Option<WlSurface>,
@@ -72,7 +86,6 @@ impl Drop for Output {
         if let Some(surface) = self.surface.take() {
             surface.destroy();
         }
-        self.wl_output.release();
     }
 }
 
@@ -120,14 +133,33 @@ impl Conn {
         self.queue.roundtrip(&mut self.state)?;
 
         loop {
+            if closed() {
+                return Ok(Vec::new());
+            }
+
             if self.state.outputs.values().all(Output::ready) {
+                // If there are any pending updates we should catch them in set_wallpapers
                 break;
             }
             timeout(Duration::from_secs(5), self.poll_once()).await??;
         }
 
-        // timeout 5s -> treat as closed
-        todo!()
+        Ok(self
+            .state
+            .outputs
+            .iter()
+            .map(|(name, out)| {
+                // ready -> all of them have resolutions
+                let (w, h) = out.res().unwrap();
+                Monitor {
+                    width: w as u32,
+                    height: h as u32,
+                    top: 0,
+                    left: 0,
+                    name: *name,
+                }
+            })
+            .collect::<Vec<_>>())
     }
 
     // This should eventually return in case of a new monitor that needs a wallpaper in daemon
@@ -140,18 +172,203 @@ impl Conn {
 
     async fn poll_once(&mut self) -> Result<()> {
         self.queue.flush()?;
+
         let Some(guard) = self.queue.prepare_read() else {
             self.queue.dispatch_pending(&mut self.state)?;
             return Ok(());
         };
 
         let mut fd = AsyncFd::new(guard.connection_fd())?;
-        let mut readable = fd.readable_mut().await?;
-        readable.clear_ready(); // Should be unnecssary since these fds are one-time use
+        let _readable = fd.readable_mut().await?;
+        drop(fd);
+        guard.read()?;
 
         self.queue.dispatch_pending(&mut self.state)?;
         Ok(())
     }
+
+    pub async fn set_wallpapers(
+        &mut self,
+        wallpapers: HashMap<PathBuf, Vec<&Monitor>>,
+    ) -> Result<()> {
+        let mut image_futures: FuturesUnordered<_> = wallpapers
+            .into_iter()
+            .map(|(p, monitors)| {
+                let (send, recv) = oneshot::channel::<(Result<ShmImage>, Vec<u32>)>();
+                let monitors = monitors.into_iter().map(|m| m.name).collect();
+
+                WORKER.spawn(move || {
+                    let mi = if let Some(cache) = OPTIMISTIC_CACHE.get()
+                        && let Some(cached) = cache.read().unwrap().peek(&p)
+                    {
+                        copy_to_shm(cached)
+                    } else {
+                        let mut img = image::open(&p).unwrap().into_rgba8();
+                        // rgba8 -> BGRX, remove transparency
+                        img.chunks_exact_mut(4).for_each(|c| c.swap(0, 2));
+                        copy_to_shm(&img)
+                    };
+                    send.send((mi, monitors)).unwrap();
+                });
+
+                recv
+            })
+            .collect();
+
+        let mut pending_wallpapers: Vec<(ShmImage, Vec<u32>)> = Vec::new();
+
+        let start = Instant::now();
+        let deadline = start + Duration::from_secs(60);
+        // Only do flushing/polling if it seems to be going slow, otherwise try to do it
+        // atomically;
+        let fast_deadline = start + Duration::from_secs(1);
+        let mut slow = false;
+        loop {
+            // A bit clunky to insert them into a vec and just dump them but it's fine
+            pending_wallpapers.retain_mut(|(image, monitors)| {
+                monitors.retain(|m| !self.try_upload(image, *m));
+                !monitors.is_empty()
+            });
+
+            if pending_wallpapers.is_empty() && image_futures.is_empty() {
+                break;
+            }
+
+            select! {
+                Some(res) = image_futures.next() => {
+                    let (image, monitors) = res?;
+                    let image = image?;
+                    pending_wallpapers.push((image, monitors));
+                },
+                res = self.poll_once(), if slow => {
+                    res?;
+                    if pending_wallpapers.is_empty() {
+                        continue;
+                    }
+                },
+                _ = sleep_until(fast_deadline), if !slow => {
+                    slow = true;
+                },
+                _ = sleep_until(deadline) => {
+                    bail!("Failed to set all wallpapers within a reasonable timeframe");
+                }
+            }
+        }
+        self.queue.flush()?;
+
+        Ok(())
+    }
+
+    // Returns true if this was the final try. False means to retain this monitor to try again.
+    fn try_upload(&mut self, image: &ShmImage, m: u32) -> bool {
+        let Some(output) = self.state.outputs.get_mut(&m) else {
+            println!("Missing monitor after load {m}");
+            return true;
+        };
+
+        if !output.ready() {
+            println!("Output isn't ready: {m}");
+            return false;
+        }
+
+        if !output
+            .res()
+            .is_some_and(|r| r.0 as u32 == image.res.0 && r.1 as u32 == image.res.1)
+        {
+            println!("Output resolution has changed: {m}");
+            return true;
+        }
+
+        let w = image.res.0 as i32;
+        let h = image.res.1 as i32;
+        let qh = &self.queue.handle();
+
+        let pool = self.state.shm.as_ref().unwrap().create_pool(
+            unsafe { BorrowedFd::borrow_raw(image.fd) },
+            image.size as i32,
+            qh,
+            (),
+        );
+
+        let buf = pool.create_buffer(0, w, h, w * 4, Format::Xrgb8888, qh, ());
+        pool.destroy();
+
+        let surface = output.surface.as_ref().unwrap();
+        surface.attach(Some(&buf), 0, 0);
+
+        surface.damage(0, 0, w, h);
+
+        if let Some(view) = &output.viewport {
+            let unscaled = output.res.unwrap();
+            view.set_destination(unscaled.0 as i32, unscaled.1 as i32);
+        } else {
+            surface.set_buffer_scale(output.int_scale);
+        }
+
+        surface.commit();
+
+        buf.destroy();
+        true
+    }
+}
+
+#[derive(Debug)]
+struct ShmImage {
+    buf: *mut i8,
+    size: usize,
+    res: (u32, u32),
+    fd: i32,
+}
+unsafe impl Send for ShmImage {}
+
+impl Drop for ShmImage {
+    fn drop(&mut self) {
+        unsafe {
+            close(self.fd);
+            libc::munmap(self.buf.cast(), self.size);
+        }
+    }
+}
+
+// Should be good enough
+static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
+
+fn copy_to_shm(img: &RgbaImage) -> Result<ShmImage> {
+    // If this runs into problems, we'll need rng
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    let name = CString::new(format!("aw-wallpapers{}-{}", process::id(), id)).unwrap();
+
+    let res = img.dimensions();
+    let raw_img = img.as_raw();
+    let size = mem::size_of_val(&raw_img[0]) * raw_img.len();
+
+    let fd = unsafe { shm_open(name.as_ptr(), O_RDWR | O_CREAT | O_EXCL, 0o600) };
+    if fd < 0 {
+        bail!("Unable to open shared memory: {fd}");
+    }
+
+    let buf = unsafe {
+        shm_unlink(name.as_ptr());
+        let mut ret = 1;
+        for _ in 0..100 {
+            ret = ftruncate(fd, size as i64);
+            if ret == 0 || Errno::last() != Errno::EINTR {
+                break;
+            }
+        }
+        if ret < 0 {
+            close(fd);
+            bail!("Failed to extend file descriptor to {}: {}", size, ret);
+        }
+
+        let buf = libc::mmap(ptr::null_mut(), size as _, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        assert_eq!(size, img.len());
+        buf.copy_from_nonoverlapping(img.as_ptr().cast(), size as _);
+        buf
+    }
+    .cast();
+
+    Ok(ShmImage { buf, res, size, fd })
 }
 
 impl Dispatch<WlRegistry, ()> for AppData {
@@ -167,12 +384,10 @@ impl Dispatch<WlRegistry, ()> for AppData {
         // `global` event, which signals a new available global.
         // When receiving this event, we just print its characteristics in this example.
         match event {
-            wl_registry::Event::Global { name, interface, version } => {
-                println!("[{}] {} (v{})", name, interface, version);
+            wl_registry::Event::Global { name, interface, .. } => {
                 if interface == WlOutput::interface().name {
                     let wl_output = reg.bind::<WlOutput, _, _>(name, 2, qh, name);
                     let output = Output {
-                        name,
                         wl_output,
                         fract_scale: None,
                         surface: None,
@@ -279,7 +494,6 @@ impl Dispatch<WpFractionalScaleV1, u32> for AppData {
         _conn: &Connection,
         _qhandle: &QueueHandle<Self>,
     ) {
-        println!("frac {event:?}");
         if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
             let output = state.outputs.get_mut(name).unwrap();
             output.fractional_scale = Some(scale);
@@ -305,14 +519,14 @@ impl Dispatch<ZwlrLayerSurfaceV1, u32> for AppData {
     }
 }
 
-delegate_noop!(AppData: WlBuffer);
-delegate_noop!(AppData: WlCompositor);
-delegate_noop!(AppData: WlRegion);
+delegate_noop!(AppData: ignore WlBuffer);
+delegate_noop!(AppData: ignore WlCompositor);
+delegate_noop!(AppData: ignore WlRegion);
 // We don't care about format since Xrgb8888 _must_ be supported
-delegate_noop!(AppData: WlShm);
-delegate_noop!(AppData: WlShmPool);
-delegate_noop!(AppData: WlSurface);
-delegate_noop!(AppData: WpFractionalScaleManagerV1);
-delegate_noop!(AppData: WpViewport);
-delegate_noop!(AppData: WpViewporter);
-delegate_noop!(AppData: ZwlrLayerShellV1);
+delegate_noop!(AppData: ignore WlShm);
+delegate_noop!(AppData: ignore WlShmPool);
+delegate_noop!(AppData: ignore WlSurface);
+delegate_noop!(AppData: ignore WpFractionalScaleManagerV1);
+delegate_noop!(AppData: ignore WpViewport);
+delegate_noop!(AppData: ignore WpViewporter);
+delegate_noop!(AppData: ignore ZwlrLayerShellV1);

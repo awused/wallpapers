@@ -1,7 +1,6 @@
 use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, VecDeque};
 use std::convert::Into;
-use std::error::Error;
 use std::ffi::OsStr;
 use std::fmt::Write;
 use std::fs::{copy, create_dir_all};
@@ -116,7 +115,7 @@ impl Command {
 }
 
 
-#[tokio::main(flavor = "current_thread")]
+#[allow(clippy::await_holding_lock)]
 pub async fn run(starting_path: &Path) -> Result<()> {
     let tdir = LazyLock::new(make_tdir as _);
     let mut con = monitors::init();
@@ -169,7 +168,7 @@ pub async fn run(starting_path: &Path) -> Result<()> {
     if closing::closed() {
         return Ok(());
     }
-    con.set_wallpapers(&[(&wid, &monitors)], true);
+    con.set_wallpapers(&[(&wid, &monitors)], true).await?;
 
     // It'll be done by now, just join it to be certain.
     #[cfg(feature = "opencl")]

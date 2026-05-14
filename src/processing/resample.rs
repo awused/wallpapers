@@ -98,7 +98,7 @@ mod opencl {
 
 
         // Alignment check. This should never fail, but if it does we can't go on.
-        assert!((std::ptr::addr_of!(image[0]) as usize) % 4 == 0);
+        assert!((std::ptr::addr_of!(image[0]) as usize).is_multiple_of(4));
         assert!(channels <= 4);
         assert_eq!(
             current_res.w as usize * current_res.h as usize * channels as usize,

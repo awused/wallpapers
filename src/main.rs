@@ -22,7 +22,6 @@ use color_eyre::Result;
 use config::{ImageProperties, PROPERTIES, string_to_colour};
 use crossbeam_utils::thread::scope;
 use directories::ids::{TempWallpaperID, WallpaperID};
-use futures::executor::block_on;
 use lru::LruCache;
 use monitors::Monitor;
 #[cfg(feature = "opencl")]
@@ -131,18 +130,38 @@ enum Command {
 
 pub static OPTIONS: LazyLock<Opt> = LazyLock::new(Opt::parse);
 
-fn main() {
+#[tokio::main(flavor = "current_thread")]
+async fn main() {
     closing::init();
     color_eyre::install().unwrap();
 
     match &OPTIONS.cmd {
         Command::Random => {
             let mut con = monitors::init();
-            block_on(random(&mut con)).unwrap();
+            if !con.requires_persistence() {
+                random(&mut con).await.unwrap();
+            } else {
+                println!(
+                    "Random is unsupported in this environment, attempting to signal daemon by \
+                     name using pkill.\nPrefer calling pkill or similar directly instead."
+                );
+                if let Some(arg0) = std::env::args().next()
+                    && let Some(name) = Path::new(&arg0).file_name()
+                {
+                    let mut c = std::process::Command::new("/usr/bin/pkill");
+                    // Only exact matches with a handler registered for USR1. Probably safe.
+                    c.arg("-x");
+                    c.arg("-H");
+                    c.arg("-USR1");
+                    c.arg(name);
+                    let mut child = c.spawn().unwrap();
+                    child.wait().unwrap();
+                }
+            }
         }
         #[cfg(unix)]
-        Command::Daemon => daemon::run(),
-        Command::Sync { clean_monitors } => sync(*clean_monitors),
+        Command::Daemon => daemon::run().await,
+        Command::Sync { clean_monitors } => sync(*clean_monitors).await,
         Command::Preview {
             vertical,
             horizontal,
@@ -169,12 +188,12 @@ fn main() {
                 nested: BTreeMap::new(),
             };
 
-            preview(file, props);
+            preview(file, props).await;
         }
         Command::Interactive { file } => {
-            interactive::run(file).unwrap();
+            interactive::run(file).await.unwrap();
         }
-        Command::ListMonitors => print_monitors(),
+        Command::ListMonitors => print_monitors().await,
         #[cfg(feature = "opencl")]
         Command::ShowGpus => print_gpus(),
     }
@@ -214,9 +233,7 @@ async fn random(con: &mut Connection) -> Result<()> {
         .into_iter()
         .cloned()
         .collect();
-    let close_handle = thread::spawn(move || {
-        shuffler.close().unwrap();
-    });
+    let close_handle = thread::spawn(move || shuffler.close());
 
 
     // Merge any duplicate wallpapers.
@@ -251,15 +268,15 @@ async fn random(con: &mut Connection) -> Result<()> {
         con.set_wallpapers(combined.as_slice(), false).await?;
     }
 
-    close_handle.join().unwrap();
+    close_handle.join().unwrap()?;
     Ok(())
 }
 
-fn sync(clean_monitors: bool) {
+async fn sync(clean_monitors: bool) {
     let tdir = LazyLock::new(make_tdir as _);
 
     let mut con = monitors::init();
-    let monitors = block_on(con.list_monitors()).unwrap();
+    let monitors = con.list_monitors().await.unwrap();
     if monitors.is_empty() {
         println!("No monitors detected");
         return;
@@ -355,10 +372,17 @@ fn sync(clean_monitors: bool) {
     shuffler.close().unwrap();
 }
 
-fn preview(path: &Path, props: ImageProperties) {
+async fn preview(path: &Path, props: ImageProperties) {
     let tdir = LazyLock::new(make_tdir as _);
     let mut con = monitors::init();
-    let monitors = block_on(con.list_monitors()).unwrap();
+
+
+    if con.requires_persistence() {
+        println!("Preview is unsupported in this environment");
+        return;
+    }
+
+    let monitors = con.list_monitors().await.unwrap();
     if monitors.is_empty() {
         println!("No monitors detected");
         return;
@@ -380,16 +404,16 @@ fn preview(path: &Path, props: ImageProperties) {
     w.process(false);
 
     if !closing::closed() {
-        con.set_wallpapers(&[(&wid, &monitors)], true);
+        con.set_wallpapers(&[(&wid, &monitors)], true).await.unwrap();
     }
 
     #[cfg(feature = "opencl")]
     cl_spawn_handle.join().unwrap();
 }
 
-fn print_monitors() {
+async fn print_monitors() {
     let mut con = monitors::init();
-    let monitors = block_on(con.list_monitors()).unwrap();
+    let monitors = con.list_monitors().await.unwrap();
     if monitors.is_empty() {
         println!("No monitors detected");
         return;

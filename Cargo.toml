@@ -15,39 +15,40 @@ links = "X11, Xrandr"
 awconf = { git = "https://github.com/awused/awconf" }
 aw-shuffle = { git = "https://github.com/awused/aw-shuffle", features = [ "rocks" ] }
 aw-upscale = { git = "https://github.com/awused/aw-upscale" }
-clap = { version = "4.5.47", features = ["derive"] }
+clap = { version = "4.6.1", features = ["derive"] }
 color-eyre = "0.6.5"
 crossbeam-utils = "0.8.21"
 dialoguer = { version = "0.12.0", default-features = false, features = [ "history" ] }
-futures = "0.3.31"
-image = { version = "0.25.8", default-features = false, features = [ "jpeg", "png", "bmp" ] }
-lru = { version = "0.16.1", default-features = false }
+futures = "0.3.32"
+image = { version = "0.25.10", default-features = false, features = [ "jpeg", "png", "bmp" ] }
+lru = { version = "0.18.0", default-features = false }
 num_cpus = "1.17.0"
 ocl = { version = "0.19.7", optional = true }
-rayon = "1.11.0"
-regex = "1.11.2"
-serde = { version = "1.0.225", default-features = false, features = [ "derive" ] }
-signal-hook = { version = "0.3.18", default-features = false }
-tempfile = "3.22.0"
-tokio = { version = "1.47.1", features = [ "macros", "process", "rt", "sync", "time" ] }
-toml = "0.9.6"
+rayon = "1.12.0"
+regex = "1.12.3"
+serde = { version = "1.0.228", default-features = false, features = [ "derive" ] }
+signal-hook = { version = "0.4.4", default-features = false }
+tempfile = "3.27.0"
+tokio = { version = "1.52.3", features = [ "macros", "process", "rt", "sync", "time" ] }
+toml = "1.1.2"
 walkdir = "2.5.0"
 
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2.175"
-signal-hook-tokio = { version = "0.3.1", features = [ "futures-v0_3" ] }
-tikv-jemallocator = { version = "0.6.0", features = [ "background_threads" ] }
+libc = "0.2.186"
+nix = {version = "0.31.3", default-features = false }
+signal-hook-tokio = { version = "0.4.0", features = [ "futures-v0_3" ] }
+tikv-jemallocator = { version = "0.6.1", features = [ "background_threads" ] }
 wayland-client = "0.31.14"
 wayland-protocols = { version = "0.32.12", features = ["client", "staging"] }
 wayland-protocols-wlr = { version = "0.3.12", features = ["client"] }
 x11 = "2.21.0"
 
 [target.'cfg(windows)'.dependencies]
-widestring = "1.2.0"
+widestring = "1.2.1"
 
 [target.'cfg(windows)'.dependencies.windows]
-version = "0.62.0"
+version = "0.62.2"
 features = [
   "Win32_Foundation",
   "Win32_System_Com",
