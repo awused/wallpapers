@@ -136,29 +136,7 @@ async fn main() {
     color_eyre::install().unwrap();
 
     match &OPTIONS.cmd {
-        Command::Random => {
-            let mut con = monitors::init();
-            if !con.requires_persistence() {
-                random(&mut con).await.unwrap();
-            } else {
-                println!(
-                    "Random is unsupported in this environment, attempting to signal daemon by \
-                     name using pkill.\nPrefer calling pkill or similar directly instead."
-                );
-                if let Some(arg0) = std::env::args().next()
-                    && let Some(name) = Path::new(&arg0).file_name()
-                {
-                    let mut c = std::process::Command::new("/usr/bin/pkill");
-                    // Only exact matches with a handler registered for USR1. Probably safe.
-                    c.arg("-x");
-                    c.arg("-H");
-                    c.arg("-USR1");
-                    c.arg(name);
-                    let mut child = c.spawn().unwrap();
-                    child.wait().unwrap();
-                }
-            }
-        }
+        Command::Random => random_command().await.unwrap(),
         #[cfg(unix)]
         Command::Daemon => daemon::run().await,
         Command::Sync { clean_monitors } => sync(*clean_monitors).await,
@@ -200,14 +178,39 @@ async fn main() {
 }
 
 
-async fn random(con: &mut Connection) -> Result<()> {
-    let tdir = LazyLock::new(make_tdir as _);
+async fn random_command() -> Result<()> {
+    let mut con = monitors::init();
+    if con.requires_persistence() {
+        println!(
+            "Random is unsupported in this environment, attempting to signal daemon by name using \
+             pkill.\nPrefer calling pkill or similar directly instead."
+        );
+        if let Some(arg0) = std::env::args().next()
+            && let Some(name) = Path::new(&arg0).file_name()
+        {
+            let mut c = std::process::Command::new("/usr/bin/pkill");
+            // Only exact matches with a handler registered for USR1. Probably safe.
+            c.arg("-x");
+            c.arg("-H");
+            c.arg("-USR1");
+            c.arg(name);
+            let mut child = c.spawn().unwrap();
+            child.wait().unwrap();
+        }
+        return Ok(());
+    }
 
     let monitors = con.list_monitors().await?;
+    random(&mut con, monitors).await
+}
+
+async fn random(con: &mut Connection, monitors: Vec<Monitor>) -> Result<()> {
     if monitors.is_empty() {
         println!("No monitors detected");
         return Ok(());
     }
+
+    let tdir = LazyLock::new(make_tdir as _);
 
     let wallpapers = get_all_originals()?;
     if wallpapers.is_empty() {

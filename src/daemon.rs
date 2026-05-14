@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 use std::sync::atomic::Ordering;
 
 use color_eyre::Result;
+use color_eyre::eyre::bail;
 use futures::StreamExt;
 use libc::SIGUSR1;
 use signal_hook::consts::TERM_SIGNALS;
@@ -29,17 +30,18 @@ async fn tokio_run() -> Result<()> {
     signals.handle().add_signal(SIGUSR1)?;
 
     let mut con = monitors::init();
+    let mut monitors = con.list_monitors().await?;
 
     'outer: loop {
         {
-            let mut random = pin!(random(&mut con));
+            let mut random = pin!(random(&mut con, monitors));
 
             'inner: loop {
                 select! {
                     res = &mut random => {
                         match res {
                             Ok(_) => break 'inner,
-                            Err(e) => println!("Got unexpected error {e}"),
+                            Err(e) => bail!("Got unexpected error {e}"),
                         }
                     },
                     sig = signals.next() => {
@@ -72,10 +74,13 @@ async fn tokio_run() -> Result<()> {
                 }
             },
             res = con.poll() => {
-                res?;
-                unreachable!()
+                monitors = res?;
+                println!("Got updates to {} monitors", monitors.len());
+                continue
             }
         }
+
+        monitors = con.list_monitors().await?;
     }
 
     Ok(())

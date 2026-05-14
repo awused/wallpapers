@@ -197,8 +197,9 @@ pub async fn run(starting_path: &Path) -> Result<()> {
             },
             res = con.poll() => {
                 res?;
-                // This could handle adding new monitors
-                unreachable!();
+                // Just ignore this for now, some monitors needed updates but the user is
+                // interacting with the application.
+                continue;
             },
             _ = ticker.tick() => {
                 if closing::closed() {

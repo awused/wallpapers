@@ -79,7 +79,7 @@ impl Connection {
 
     // Keeps any underlying connection alive and up-to-date. Will only return if the connection is
     // unexpectedly closed.
-    pub async fn poll(&mut self) -> Result<()> {
+    pub async fn poll(&mut self) -> Result<Vec<Monitor>> {
         match &mut self.0 {
             Kind::Wayland(wcon) => wcon.poll().await,
             Kind::X => future::pending().await,

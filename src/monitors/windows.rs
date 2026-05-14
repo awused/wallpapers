@@ -130,7 +130,7 @@ impl Connection {
         Ok(())
     }
 
-    pub async fn poll(&mut self) -> color_eyre::Result<()> {
+    pub async fn poll(&mut self) -> color_eyre::Result<Vec<Monitor>> {
         std::future::pending().await
     }
 

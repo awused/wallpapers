@@ -70,6 +70,7 @@ struct Output {
     res: Option<(u32, u32)>,
     fractional_scale: Option<u32>,
     int_scale: i32,
+    clean: bool,
 }
 
 impl Drop for Output {
@@ -147,8 +148,9 @@ impl Conn {
         Ok(self
             .state
             .outputs
-            .iter()
+            .iter_mut()
             .map(|(name, out)| {
+                out.clean = true;
                 // ready -> all of them have resolutions
                 let (w, h) = out.res().unwrap();
                 Monitor {
@@ -164,10 +166,31 @@ impl Conn {
 
     // This should eventually return in case of a new monitor that needs a wallpaper in daemon
     // mode, maybe interactive too.
-    pub async fn poll(&mut self) -> Result<()> {
-        loop {
+    pub async fn poll(&mut self) -> Result<Vec<Monitor>> {
+        while !self.state.outputs.values().any(|out| out.ready() && !out.clean) {
             self.poll_once().await?;
         }
+
+        self.queue.roundtrip(&mut self.state)?;
+
+        Ok(self
+            .state
+            .outputs
+            .iter_mut()
+            .filter(|(_name, out)| out.ready() && !out.clean)
+            .map(|(name, out)| {
+                out.clean = true;
+                // ready -> all of them have resolutions
+                let (w, h) = out.res().unwrap();
+                Monitor {
+                    width: w as u32,
+                    height: h as u32,
+                    top: 0,
+                    left: 0,
+                    name: *name,
+                }
+            })
+            .collect())
     }
 
     async fn poll_once(&mut self) -> Result<()> {
@@ -191,6 +214,8 @@ impl Conn {
         &mut self,
         wallpapers: HashMap<PathBuf, Vec<&Monitor>>,
     ) -> Result<()> {
+        self.queue.roundtrip(&mut self.state)?;
+
         let mut image_futures: FuturesUnordered<_> = wallpapers
             .into_iter()
             .map(|(p, monitors)| {
@@ -266,7 +291,7 @@ impl Conn {
             return true;
         };
 
-        if !output.ready() {
+        if !output.ready() || !output.clean {
             println!("Output isn't ready: {m}");
             return false;
         }
@@ -292,6 +317,7 @@ impl Conn {
 
         let buf = pool.create_buffer(0, w, h, w * 4, Format::Xrgb8888, qh, ());
         pool.destroy();
+
 
         let surface = output.surface.as_ref().unwrap();
         surface.attach(Some(&buf), 0, 0);
@@ -396,6 +422,7 @@ impl Dispatch<WlRegistry, ()> for AppData {
                         res: None,
                         fractional_scale: None,
                         int_scale: 1,
+                        clean: false,
                     };
                     state.outputs.insert(name, output);
                 } else if interface == WpFractionalScaleManagerV1::interface().name {
@@ -438,7 +465,11 @@ impl Dispatch<WlOutput, u32> for AppData {
     ) {
         if let wl_output::Event::Scale { factor } = event {
             let output = state.outputs.get_mut(name).unwrap();
-            output.int_scale = factor;
+            if output.int_scale != factor {
+                output.int_scale = factor;
+                output.clean = false;
+                println!("Output {name} dirtied by new int scale {factor}");
+            }
         }
 
         if matches!(event, wl_output::Event::Done) {
@@ -496,7 +527,11 @@ impl Dispatch<WpFractionalScaleV1, u32> for AppData {
     ) {
         if let wp_fractional_scale_v1::Event::PreferredScale { scale } = event {
             let output = state.outputs.get_mut(name).unwrap();
-            output.fractional_scale = Some(scale);
+            if output.fractional_scale != Some(scale) {
+                output.fractional_scale = Some(scale);
+                output.clean = false;
+                println!("Output {name} dirtied by PreferredScale {scale}");
+            }
         }
     }
 }
@@ -512,7 +547,11 @@ impl Dispatch<ZwlrLayerSurfaceV1, u32> for AppData {
     ) {
         if let zwlr_layer_surface_v1::Event::Configure { serial, width, height } = event {
             let output = state.outputs.get_mut(name).unwrap();
-            output.res = Some((width, height));
+            if output.res != Some((width, height)) {
+                output.res = Some((width, height));
+                output.clean = false;
+                println!("Output {name} dirtied by Configure {width}x{height}");
+            }
 
             proxy.ack_configure(serial);
         }
