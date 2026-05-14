@@ -3,7 +3,6 @@ use std::sync::LazyLock;
 use std::sync::atomic::Ordering;
 
 use color_eyre::Result;
-use color_eyre::eyre::bail;
 use futures::StreamExt;
 use libc::SIGUSR1;
 use signal_hook::consts::TERM_SIGNALS;
@@ -39,10 +38,13 @@ async fn tokio_run() -> Result<()> {
             'inner: loop {
                 select! {
                     res = &mut random => {
-                        match res {
-                            Ok(_) => break 'inner,
-                            Err(e) => bail!("Got unexpected error {e}"),
+                        if let Err(e) = res {
+                            // Errors from random() can be ignored as temporary
+                            // If there's a problem with the connection, it should fail
+                            // in list_monitors() which will be fatal.
+                            println!("Got unexpected error: {e}");
                         }
+                        break 'inner;
                     },
                     sig = signals.next() => {
                         match sig {

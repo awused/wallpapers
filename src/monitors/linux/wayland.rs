@@ -156,7 +156,9 @@ impl Conn {
                 Monitor {
                     width: w as u32,
                     height: h as u32,
+                    #[cfg(feature = "x11")]
                     top: 0,
+                    #[cfg(feature = "x11")]
                     left: 0,
                     name: *name,
                 }
@@ -185,7 +187,9 @@ impl Conn {
                 Monitor {
                     width: w as u32,
                     height: h as u32,
+                    #[cfg(feature = "x11")]
                     top: 0,
+                    #[cfg(feature = "x11")]
                     left: 0,
                     name: *name,
                 }
@@ -242,16 +246,24 @@ impl Conn {
 
         let mut pending_wallpapers: Vec<(ShmImage, Vec<u32>)> = Vec::new();
 
-        let start = Instant::now();
-        let deadline = start + Duration::from_secs(60);
+        let deadline = Instant::now() + Duration::from_secs(60);
         // Only do flushing/polling if it seems to be going slow, otherwise try to do it
         // atomically;
-        let fast_deadline = start + Duration::from_secs(1);
+        let mut fast_deadline = None;
         let mut slow = false;
+
         loop {
             // A bit clunky to insert them into a vec and just dump them but it's fine
             pending_wallpapers.retain_mut(|(image, monitors)| {
-                monitors.retain(|m| !self.try_upload(image, *m));
+                monitors.retain(|m| {
+                    // Could be true if it was a permanent failure, but that's fine here.
+                    let committed = self.try_upload(image, *m);
+                    if committed && fast_deadline.is_none() {
+                        fast_deadline = Some(Instant::now() + Duration::from_millis(500));
+                    }
+
+                    !committed
+                });
                 !monitors.is_empty()
             });
 
@@ -259,19 +271,19 @@ impl Conn {
                 break;
             }
 
+            // Pause polling for a brief duration after the first commit if we're not waiting for
+            // some updates.
+            let allow_polling = slow || fast_deadline.is_none() || !pending_wallpapers.is_empty();
             select! {
                 Some(res) = image_futures.next() => {
                     let (image, monitors) = res?;
                     let image = image?;
                     pending_wallpapers.push((image, monitors));
                 },
-                res = self.poll_once(), if slow => {
+                res = self.poll_once(), if allow_polling => {
                     res?;
-                    if pending_wallpapers.is_empty() {
-                        continue;
-                    }
                 },
-                _ = sleep_until(fast_deadline), if !slow => {
+                _ = sleep_until(fast_deadline.unwrap()), if !slow && fast_deadline.is_some() => {
                     slow = true;
                 },
                 _ = sleep_until(deadline) => {

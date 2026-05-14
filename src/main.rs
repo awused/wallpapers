@@ -12,7 +12,8 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{LazyLock, RwLock};
-use std::thread;
+use std::time::Duration;
+use std::{process, thread};
 
 use aw_shuffle::AwShuffler;
 use aw_shuffle::persistent::rocksdb::Shuffler;
@@ -28,12 +29,14 @@ use monitors::Monitor;
 use processing::resample::{OPENCL_QUEUE, print_gpus};
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use tempfile::TempDir;
+use tokio::time::sleep;
 use walkdir::{DirEntry, WalkDir};
 use wallpaper::OPTIMISTIC_CACHE;
 
 use crate::config::CONFIG;
 use crate::directories::get_all_originals;
 use crate::monitors::Connection;
+use crate::processing::SMALL_POOLS;
 use crate::wallpaper::Wallpaper;
 
 pub(crate) mod closing;
@@ -179,29 +182,41 @@ async fn main() {
 
 
 async fn random_command() -> Result<()> {
-    let mut con = monitors::init();
-    if con.requires_persistence() {
-        println!(
-            "Random is unsupported in this environment, attempting to signal daemon by name using \
-             pkill.\nPrefer calling pkill or similar directly instead."
-        );
-        if let Some(arg0) = std::env::args().next()
-            && let Some(name) = Path::new(&arg0).file_name()
-        {
-            let mut c = std::process::Command::new("/usr/bin/pkill");
-            // Only exact matches with a handler registered for USR1. Probably safe.
-            c.arg("-x");
-            c.arg("-H");
-            c.arg("-USR1");
-            c.arg(name);
-            let mut child = c.spawn().unwrap();
-            child.wait().unwrap();
-        }
+    #[cfg(all(unix, not(feature = "x11")))]
+    {
+        pkill_wayland();
         return Ok(());
     }
+    #[cfg(not(all(unix, not(feature = "x11"))))]
+    {
+        let mut con = monitors::init();
+        if con.requires_persistence() {
+            pkill_wayland();
+            return Ok(());
+        }
 
-    let monitors = con.list_monitors().await?;
-    random(&mut con, monitors).await
+        let monitors = con.list_monitors().await?;
+        random(&mut con, monitors).await
+    }
+}
+
+fn pkill_wayland() {
+    println!(
+        "Random is unsupported in this environment, attempting to signal daemon by name using \
+         pkill.\nPrefer calling pkill or similar directly instead."
+    );
+    if let Some(arg0) = std::env::args().next()
+        && let Some(name) = Path::new(&arg0).file_name()
+    {
+        let mut c = std::process::Command::new("/usr/bin/pkill");
+        // Only exact matches with a handler registered for USR1. Probably safe.
+        c.arg("-x");
+        c.arg("-H");
+        c.arg("-USR1");
+        c.arg(name);
+        let mut child = c.spawn().unwrap();
+        child.wait().unwrap();
+    }
 }
 
 async fn random(con: &mut Connection, monitors: Vec<Monitor>) -> Result<()> {
@@ -212,11 +227,6 @@ async fn random(con: &mut Connection, monitors: Vec<Monitor>) -> Result<()> {
 
     let tdir = LazyLock::new(make_tdir as _);
 
-    let wallpapers = get_all_originals()?;
-    if wallpapers.is_empty() {
-        println!("No wallpapers found");
-        return Ok(());
-    }
 
     // This will only be beneficial on cache misses, but can't hurt.
     if monitors::supports_memory_papers() {
@@ -225,8 +235,32 @@ async fn random(con: &mut Connection, monitors: Vec<Monitor>) -> Result<()> {
         });
     }
 
-    let options = Options::default().keep_unrecognized(true);
-    let mut shuffler = Shuffler::new(&CONFIG.database, options, Some(wallpapers)).unwrap();
+    // Opening the shuffler should only fail if it is already in use
+    let mut tries = 3;
+    let mut shuffler = loop {
+        let wallpapers = get_all_originals()?;
+        if wallpapers.is_empty() {
+            println!("No wallpapers found");
+            return Ok(());
+        }
+
+        let options = Options::default().keep_unrecognized(true);
+
+        match Shuffler::new(&CONFIG.database, options, Some(wallpapers)) {
+            Ok(shuffler) => break shuffler,
+            Err(e) if tries == 0 => {
+                return Err(e.into());
+            }
+            Err(e) => {
+                println!("Error opening shuffler: {e}, retrying");
+                // pseudo-random enough that multiple processes with the similar pids should get
+                // different delays.
+                let delay = process::id().reverse_bits() as u64 % 20000 + 2000;
+                sleep(Duration::from_millis(delay)).await
+            }
+        }
+        tries -= 1;
+    };
 
     // https://github.com/rust-lang/rust-clippy/issues/9219
     let selection: Vec<_> = shuffler
@@ -263,9 +297,15 @@ async fn random(con: &mut Connection, monitors: Vec<Monitor>) -> Result<()> {
     assert_eq!(wids.len(), grouped_monitors.len());
     let combined: Vec<_> = wids.iter().zip(grouped_monitors.iter().map(Vec::as_slice)).collect();
 
-    combined.par_iter().for_each(|(wid, monitors)| {
-        Wallpaper::new(*wid, monitors, &tdir).process(true);
-    });
+    if !SMALL_POOLS.load(Ordering::Relaxed) {
+        combined.par_iter().for_each(|(wid, monitors)| {
+            Wallpaper::new(*wid, monitors, &tdir).process(true);
+        });
+    } else {
+        combined.iter().for_each(|(wid, monitors)| {
+            Wallpaper::new(*wid, monitors, &tdir).process(true);
+        });
+    }
 
     if !closing::closed() {
         con.set_wallpapers(combined.as_slice(), false).await?;
@@ -300,7 +340,8 @@ async fn sync(clean_monitors: bool) {
         return;
     }
 
-    // Rayon is too parallel for this, need something dumber that isn't as proactive.
+    // Rayon is too parallel for this, need something dumber that isn't as proactive to make the
+    // order somewhat consistent.
     let index = AtomicUsize::new(0);
     scope(|s| {
         for _n in 0..num_cpus::get() {

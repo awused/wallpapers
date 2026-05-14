@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
+#[cfg(feature = "x11")]
 use std::future;
+#[cfg(feature = "x11")]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use color_eyre::Result;
@@ -8,8 +10,10 @@ use color_eyre::Result;
 use crate::directories::ids::WallpaperID;
 
 mod wayland;
+#[cfg(feature = "x11")]
 mod xorg;
 
+#[cfg(feature = "x11")]
 static IS_WAYLAND: AtomicBool = AtomicBool::new(false);
 
 pub const fn supports_memory_papers() -> bool {
@@ -19,17 +23,25 @@ pub const fn supports_memory_papers() -> bool {
 #[allow(clippy::large_enum_variant)]
 enum Kind {
     Wayland(wayland::Conn),
+    #[cfg(feature = "x11")]
     X,
 }
 
 pub struct Connection(Kind);
 
 pub fn init() -> Connection {
-    if let Some(wayland) = wayland::init() {
-        IS_WAYLAND.store(true, Ordering::Relaxed);
-        Connection(Kind::Wayland(wayland))
-    } else {
-        Connection(Kind::X)
+    #[cfg(feature = "x11")]
+    {
+        if let Some(wayland) = wayland::init() {
+            IS_WAYLAND.store(true, Ordering::Relaxed);
+            Connection(Kind::Wayland(wayland))
+        } else {
+            Connection(Kind::X)
+        }
+    }
+    #[cfg(not(feature = "x11"))]
+    {
+        Connection(Kind::Wayland(wayland::init().unwrap()))
     }
 }
 
@@ -38,7 +50,9 @@ pub struct Monitor {
     pub width: u32,
     pub height: u32,
     // For x11
+    #[cfg(feature = "x11")]
     top: i32,
+    #[cfg(feature = "x11")]
     left: i32,
     // For wayland
     name: u32,
@@ -48,6 +62,7 @@ impl Connection {
     pub async fn list_monitors(&mut self) -> Result<Vec<Monitor>> {
         match &mut self.0 {
             Kind::Wayland(wcon) => wcon.list_monitors().await,
+            #[cfg(feature = "x11")]
             Kind::X => Ok(xorg::list_monitors()),
         }
     }
@@ -70,6 +85,7 @@ impl Connection {
 
         match &mut self.0 {
             Kind::Wayland(wcon) => wcon.set_wallpapers(paths_monitors).await,
+            #[cfg(feature = "x11")]
             Kind::X => {
                 // Load all uncached wallpapers and convert each one into an XImage.
                 xorg::set_wallpapers(paths_monitors).await
@@ -82,6 +98,7 @@ impl Connection {
     pub async fn poll(&mut self) -> Result<Vec<Monitor>> {
         match &mut self.0 {
             Kind::Wayland(wcon) => wcon.poll().await,
+            #[cfg(feature = "x11")]
             Kind::X => future::pending().await,
         }
     }
@@ -89,6 +106,7 @@ impl Connection {
     pub const fn requires_persistence(&self) -> bool {
         match &self.0 {
             Kind::Wayland(_) => true,
+            #[cfg(feature = "x11")]
             Kind::X => false,
         }
     }
