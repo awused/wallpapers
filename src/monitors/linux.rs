@@ -103,10 +103,10 @@ impl Connection {
         }
     }
 
+    #[cfg(feature = "x11")]
     pub const fn requires_persistence(&self) -> bool {
         match &self.0 {
             Kind::Wayland(_) => true,
-            #[cfg(feature = "x11")]
             Kind::X => false,
         }
     }

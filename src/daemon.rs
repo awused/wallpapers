@@ -1,13 +1,15 @@
 use std::pin::pin;
 use std::sync::LazyLock;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use color_eyre::Result;
 use futures::StreamExt;
-use libc::SIGUSR1;
+use libc::{SIGUSR1, SIGUSR2};
 use signal_hook::consts::TERM_SIGNALS;
 use signal_hook_tokio::Signals;
 use tokio::select;
+use tokio::time::sleep;
 
 use crate::config::{PROPERTIES, load_properties};
 use crate::monitors::{self};
@@ -27,6 +29,7 @@ pub async fn run() {
 async fn tokio_run() -> Result<()> {
     let mut signals = Signals::new(TERM_SIGNALS)?;
     signals.handle().add_signal(SIGUSR1)?;
+    signals.handle().add_signal(SIGUSR2)?;
 
     let mut con = monitors::init();
     let mut monitors = con.list_monitors().await?;
@@ -51,6 +54,11 @@ async fn tokio_run() -> Result<()> {
                             Some(SIGUSR1) => {
                                 println!("Ignoring SIGUSR1 while setting wallpapers");
                             },
+                            Some(SIGUSR2) => {
+                                println!("Got SIGUSR2, exiting in one second");
+                                sleep(Duration::from_secs(1)).await;
+                                break 'outer;
+                            },
                             Some(sig) => {
                                 println!("Got signal {sig}, exiting cleanly");
                                 break 'outer;
@@ -68,6 +76,11 @@ async fn tokio_run() -> Result<()> {
             sig = signals.next() => {
                 match sig {
                     Some(SIGUSR1) => {},
+                    Some(SIGUSR2) => {
+                        println!("Got SIGUSR2, exiting in one second");
+                        sleep(Duration::from_secs(1)).await;
+                        break 'outer;
+                    },
                     Some(sig) => {
                         println!("Got signal {sig}, exiting cleanly");
                         break;

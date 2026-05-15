@@ -6,7 +6,9 @@
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 
-use std::collections::{BTreeMap, HashSet};
+#[cfg(any(not(unix), feature = "x11"))]
+use std::collections::BTreeMap;
+use std::collections::HashSet;
 use std::fs::{remove_dir, remove_file};
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
@@ -20,9 +22,13 @@ use aw_shuffle::persistent::rocksdb::Shuffler;
 use aw_shuffle::persistent::{Options, PersistentShuffler};
 use clap::Parser;
 use color_eyre::Result;
-use config::{ImageProperties, PROPERTIES, string_to_colour};
+use config::PROPERTIES;
+#[cfg(any(not(unix), feature = "x11"))]
+use config::{ImageProperties, string_to_colour};
 use crossbeam_utils::thread::scope;
-use directories::ids::{TempWallpaperID, WallpaperID};
+#[cfg(any(not(unix), feature = "x11"))]
+use directories::ids::TempWallpaperID;
+use directories::ids::WallpaperID;
 use lru::LruCache;
 use monitors::Monitor;
 #[cfg(feature = "opencl")]
@@ -78,6 +84,7 @@ enum Command {
         #[arg(long)]
         clean_monitors: bool,
     },
+    #[cfg(any(not(unix), feature = "x11"))]
     /// Preview a single wallpaper on every monitor.
     Preview {
         #[arg(short, long, allow_hyphen_values = true)]
@@ -143,6 +150,7 @@ async fn main() {
         #[cfg(unix)]
         Command::Daemon => daemon::run().await,
         Command::Sync { clean_monitors } => sync(*clean_monitors).await,
+        #[cfg(any(not(unix), feature = "x11"))]
         Command::Preview {
             vertical,
             horizontal,
@@ -187,7 +195,7 @@ async fn random_command() -> Result<()> {
         pkill_wayland();
         return Ok(());
     }
-    #[cfg(not(all(unix, not(feature = "x11"))))]
+    #[cfg(any(not(unix), feature = "x11"))]
     {
         let mut con = monitors::init();
         if con.requires_persistence() {
@@ -416,6 +424,7 @@ async fn sync(clean_monitors: bool) {
     shuffler.close().unwrap();
 }
 
+#[cfg(any(not(unix), feature = "x11"))]
 async fn preview(path: &Path, props: ImageProperties) {
     let tdir = LazyLock::new(make_tdir as _);
     let mut con = monitors::init();

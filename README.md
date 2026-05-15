@@ -61,12 +61,18 @@ On Wayland this requires that `wallpapers daemon` is already running and it is e
 
 `wallpapers daemon`
 
-Wayland only, starts up a long-running background process in the current Wayland session to manage wallpapers. This is meant to be started up once per session after disabling other wallpaper programs.
+Linux only, starts up a long-running background process in the current X11 or Wayland session to manage wallpapers. This is meant to be started up once per session after disabling other wallpaper programs. This is unnecessary on X11 and X11 users should prefer `wallpapers random` instead.
+
+Send the process `SIGUSR1` to change wallpapers and `SIGUSR2` to gracefully shut down after giving time for a new daemon to start.
 
 ```
 swaybg_command -
-exec_always "killall wallpapers; wallpapers daemon"
+exec "wallpapers daemon &"
 ```
+
+`pkill -x -H -USR1 wallpapers` will change wallpapers on all monitors.
+
+`pkill -x -H -USR2 wallpapers; wallpapers daemon &` will gracefully restart it, such as after config changes.
 
 ### Sync
 

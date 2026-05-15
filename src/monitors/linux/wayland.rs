@@ -283,7 +283,8 @@ impl Conn {
                 res = self.poll_once(), if allow_polling => {
                     res?;
                 },
-                _ = sleep_until(fast_deadline.unwrap()), if !slow && fast_deadline.is_some() => {
+                _ = async {sleep_until(fast_deadline.unwrap()).await},
+                        if !slow && fast_deadline.is_some() => {
                     slow = true;
                 },
                 _ = sleep_until(deadline) => {
