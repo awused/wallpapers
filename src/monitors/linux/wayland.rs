@@ -30,7 +30,9 @@ use wayland_client::protocol::wl_registry::{self, WlRegistry};
 use wayland_client::protocol::wl_shm::{Format, WlShm};
 use wayland_client::protocol::wl_shm_pool::WlShmPool;
 use wayland_client::protocol::wl_surface::WlSurface;
-use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, delegate_noop};
+use wayland_client::{
+    Connection, Dispatch, DispatchError, EventQueue, Proxy, QueueHandle, delegate_noop,
+};
 use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_manager_v1::WpFractionalScaleManagerV1;
 use wayland_protocols::wp::fractional_scale::v1::client::wp_fractional_scale_v1::{
     self, WpFractionalScaleV1,
@@ -129,11 +131,29 @@ pub(super) struct Conn {
 }
 
 impl Conn {
+    fn roundtrip(&mut self) -> Result<()> {
+        if let Err(e) = self.queue.roundtrip(&mut self.state)
+            && !ignore_dispatch(&e)
+        {
+            return Err(e.into());
+        }
+        Ok(())
+    }
+
+    fn flush(&self) -> Result<()> {
+        if let Err(e) = self.queue.flush()
+            && !ignore_wayland(&e)
+        {
+            return Err(e.into());
+        }
+        Ok(())
+    }
+
     // May briefly block
     pub async fn list_monitors(&mut self) -> Result<Vec<Monitor>> {
         // Be explicit about flushing and waiting, depending on program state we might have all
         // outputs ready but invalidated.
-        self.queue.roundtrip(&mut self.state)?;
+        self.roundtrip()?;
 
         loop {
             if closed() {
@@ -175,7 +195,7 @@ impl Conn {
             self.poll_once().await?;
         }
 
-        self.queue.roundtrip(&mut self.state)?;
+        self.roundtrip()?;
 
         Ok(self
             .state
@@ -200,33 +220,35 @@ impl Conn {
     }
 
     async fn poll_once(&mut self) -> Result<()> {
-        self.queue.flush()?;
+        self.flush()?;
 
-        let Some(guard) = self.queue.prepare_read() else {
-            self.queue.dispatch_pending(&mut self.state)?;
-            return Ok(());
-        };
+        'outer: {
+            let Some(guard) = self.queue.prepare_read() else {
+                break 'outer;
+            };
 
-        let mut fd = AsyncFd::new(guard.connection_fd())?;
-        let _readable = fd.readable_mut().await?;
-        drop(fd);
-        if let Err(e) = guard.read() {
-            match e {
-                WaylandError::Io(e) => {
-                    println!("Got socket error {e}");
-                    if e.kind() != ErrorKind::WouldBlock || e.kind() == ErrorKind::Interrupted {
-                        return Err(e.into());
-                    }
+            let mut fd = AsyncFd::new(guard.connection_fd())?;
+            if let Err(e) = fd.readable_mut().await {
+                println!("Got socket error {e}");
+                if ignore_error(&e) {
+                    break 'outer;
                 }
-                WaylandError::Protocol(e) => {
-                    println!("Protocol error {e}");
-                    return Err(e.into());
-                }
+                return Err(e.into());
             }
-            self.queue.dispatch_pending(&mut self.state)?;
+
+            drop(fd);
+            if let Err(e) = guard.read()
+                && !ignore_wayland(&e)
+            {
+                return Err(e.into());
+            }
         }
 
-        self.queue.dispatch_pending(&mut self.state)?;
+        if let Err(e) = self.queue.dispatch_pending(&mut self.state)
+            && !ignore_dispatch(&e)
+        {
+            return Err(e.into());
+        }
         Ok(())
     }
 
@@ -234,7 +256,7 @@ impl Conn {
         &mut self,
         wallpapers: HashMap<PathBuf, Vec<&Monitor>>,
     ) -> Result<()> {
-        self.queue.roundtrip(&mut self.state)?;
+        self.roundtrip()?;
 
         let mut image_futures: FuturesUnordered<_> = wallpapers
             .into_iter()
@@ -275,7 +297,7 @@ impl Conn {
                     // Could be true if it was a permanent failure, but that's fine here.
                     let committed = self.try_upload(image, *m);
                     if committed && fast_deadline.is_none() {
-                        fast_deadline = Some(Instant::now() + Duration::from_millis(500));
+                        fast_deadline = Some(Instant::now() + Duration::from_millis(1000));
                     }
 
                     !committed
@@ -308,9 +330,7 @@ impl Conn {
                 }
             }
         }
-        self.queue.flush()?;
-
-        Ok(())
+        self.flush()
     }
 
     // Returns true if this was the final try. False means to retain this monitor to try again.
@@ -365,6 +385,30 @@ impl Conn {
         buf.destroy();
         true
     }
+}
+
+fn ignore_dispatch(error: &DispatchError) -> bool {
+    if let DispatchError::Backend(e) = error
+        && ignore_wayland(e)
+    {
+        true
+    } else {
+        false
+    }
+}
+
+fn ignore_wayland(error: &WaylandError) -> bool {
+    if let WaylandError::Io(e) = error
+        && ignore_error(e)
+    {
+        true
+    } else {
+        false
+    }
+}
+
+fn ignore_error(error: &std::io::Error) -> bool {
+    error.kind() == ErrorKind::WouldBlock || error.kind() == ErrorKind::Interrupted
 }
 
 #[derive(Debug)]
