@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 use std::ffi::CString;
+use std::io::ErrorKind;
 use std::os::fd::BorrowedFd;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -20,6 +21,7 @@ use tokio::io::unix::AsyncFd;
 use tokio::select;
 use tokio::sync::oneshot;
 use tokio::time::{Instant, sleep_until, timeout};
+use wayland_client::backend::WaylandError;
 use wayland_client::protocol::wl_buffer::WlBuffer;
 use wayland_client::protocol::wl_compositor::WlCompositor;
 use wayland_client::protocol::wl_output::{self, WlOutput};
@@ -208,7 +210,21 @@ impl Conn {
         let mut fd = AsyncFd::new(guard.connection_fd())?;
         let _readable = fd.readable_mut().await?;
         drop(fd);
-        guard.read()?;
+        if let Err(e) = guard.read() {
+            match e {
+                WaylandError::Io(e) => {
+                    println!("Got socket error {e}");
+                    if e.kind() != ErrorKind::WouldBlock || e.kind() == ErrorKind::Interrupted {
+                        return Err(e.into());
+                    }
+                }
+                WaylandError::Protocol(e) => {
+                    println!("Protocol error {e}");
+                    return Err(e.into());
+                }
+            }
+            self.queue.dispatch_pending(&mut self.state)?;
+        }
 
         self.queue.dispatch_pending(&mut self.state)?;
         Ok(())

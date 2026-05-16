@@ -6,8 +6,6 @@
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 
-#[cfg(any(not(unix), feature = "x11"))]
-use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::fs::{remove_dir, remove_file};
 use std::num::NonZeroUsize;
@@ -23,11 +21,7 @@ use aw_shuffle::persistent::{Options, PersistentShuffler};
 use clap::Parser;
 use color_eyre::Result;
 use config::PROPERTIES;
-#[cfg(any(not(unix), feature = "x11"))]
-use config::{ImageProperties, string_to_colour};
 use crossbeam_utils::thread::scope;
-#[cfg(any(not(unix), feature = "x11"))]
-use directories::ids::TempWallpaperID;
 use directories::ids::WallpaperID;
 use lru::LruCache;
 use monitors::Monitor;
@@ -38,6 +32,12 @@ use tempfile::TempDir;
 use tokio::time::sleep;
 use walkdir::{DirEntry, WalkDir};
 use wallpaper::OPTIMISTIC_CACHE;
+#[cfg(any(not(unix), feature = "x11"))]
+use {
+    config::{ImageProperties, string_to_colour},
+    directories::ids::TempWallpaperID,
+    std::collections::BTreeMap,
+};
 
 use crate::config::CONFIG;
 use crate::directories::get_all_originals;

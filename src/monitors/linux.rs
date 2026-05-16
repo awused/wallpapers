@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
-#[cfg(feature = "x11")]
-use std::future;
-#[cfg(feature = "x11")]
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use color_eyre::Result;
+#[cfg(feature = "x11")]
+use {
+    std::future,
+    std::sync::atomic::{AtomicBool, Ordering},
+};
 
 use crate::directories::ids::WallpaperID;
 
