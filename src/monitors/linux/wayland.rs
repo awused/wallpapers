@@ -631,6 +631,10 @@ impl Dispatch<WlOutput, u32> for AppData {
 
         if matches!(event, wl_output::Event::Done) {
             let output = state.outputs.get_mut(name).unwrap();
+            if output.surface.is_some() {
+                return;
+            }
+
             let compositor = state.compositor.as_mut().unwrap_or_else(|| {
                 panic!("Required interface not implemented: {}", WlCompositor::interface().name)
             });
