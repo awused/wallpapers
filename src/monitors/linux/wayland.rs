@@ -75,6 +75,7 @@ struct Output {
     fractional_scale: Option<u32>,
     int_scale: i32,
     clean: bool,
+    dummy_attempted: bool,
 }
 
 impl Drop for Output {
@@ -160,11 +161,39 @@ impl Conn {
                 return Ok(Vec::new());
             }
 
-            if self.state.outputs.values().all(Output::ready) {
+            if self.state.outputs.values().all(Output::ready)
+                && self.state.outputs.values().all(|o| o.fractional_scale.is_some())
+            {
                 // If there are any pending updates we should catch them in set_wallpapers
                 break;
             }
-            timeout(Duration::from_secs(5), self.poll_once()).await??;
+
+            match timeout(Duration::from_millis(500), self.poll_once()).await {
+                Ok(r) => r?,
+                Err(t) => {
+                    println!("Timed out 500ms");
+                    let mut attempted = false;
+                    let monitors: Vec<_> = self.state.outputs.keys().copied().collect();
+                    for k in monitors {
+                        let o = self.state.outputs.get_mut(&k).unwrap();
+                        if o.fractional_scale.is_none()
+                            && o.fract_scale.is_some()
+                            && !o.dummy_attempted
+                            && o.res.is_some()
+                        {
+                            attempted = true;
+                            o.dummy_attempted = true;
+                            println!("Hyprland bug detected, dirtying layer surface");
+                            // Hyprland bug, attach a buffer and remove it.
+                            self.dummy_buffer(k)?;
+                        }
+                    }
+                    if !attempted {
+                        return Err(t.into());
+                    }
+                    // break;
+                }
+            }
         }
 
         Ok(self
@@ -385,6 +414,60 @@ impl Conn {
         buf.destroy();
         true
     }
+
+    fn dummy_buffer(&self, m: u32) -> Result<()> {
+        // If this runs into problems, we'll need rng
+        let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+        let name = CString::new(format!("aw-wallpapers{}-{}", process::id(), id)).unwrap();
+
+        let res = (1, 1);
+        let size = res.0 * res.1 * 4;
+
+        let fd = unsafe { shm_open(name.as_ptr(), O_RDWR | O_CREAT | O_EXCL, 0o600) };
+        if fd < 0 {
+            bail!("Unable to open shared memory: {fd}");
+        }
+
+        unsafe {
+            shm_unlink(name.as_ptr());
+            let mut ret = 1;
+            for _ in 0..100 {
+                ret = ftruncate(fd, size as i64);
+                if ret == 0 || Errno::last() != Errno::EINTR {
+                    break;
+                }
+            }
+            if ret < 0 {
+                close(fd);
+                bail!("Failed to extend file descriptor to {}: {}", size, ret);
+            }
+        }
+
+        let qh = &self.queue.handle();
+
+        let pool = self.state.shm.as_ref().unwrap().create_pool(
+            unsafe { BorrowedFd::borrow_raw(fd) },
+            size,
+            qh,
+            (),
+        );
+
+        let buf = pool.create_buffer(0, 1, 1, 4, Format::Xrgb8888, qh, ());
+        pool.destroy();
+        let output = &self.state.outputs[&m];
+        let surface = output.surface.as_ref().unwrap();
+        surface.attach(Some(&buf), 0, 0);
+        if let Some(view) = &output.viewport {
+            view.set_destination(1, 1);
+        } else {
+            surface.set_buffer_scale(output.int_scale);
+        }
+        surface.commit();
+
+
+        buf.destroy();
+        Ok(())
+    }
 }
 
 fn ignore_dispatch(error: &DispatchError) -> bool {
@@ -496,6 +579,7 @@ impl Dispatch<WlRegistry, ()> for AppData {
                         fractional_scale: None,
                         int_scale: 1,
                         clean: false,
+                        dummy_attempted: false,
                     };
                     state.outputs.insert(name, output);
                 } else if interface == WpFractionalScaleManagerV1::interface().name {
@@ -503,7 +587,7 @@ impl Dispatch<WlRegistry, ()> for AppData {
                         reg.bind::<WpFractionalScaleManagerV1, _, _>(name, 1, qh, ());
                     state.fractional = Some(fractional_manager);
                 } else if interface == WlCompositor::interface().name {
-                    let compositor = reg.bind::<WlCompositor, _, _>(name, 1, qh, ());
+                    let compositor = reg.bind::<WlCompositor, _, _>(name, 6, qh, ());
                     state.compositor = Some(compositor);
                 } else if interface == WpViewporter::interface().name {
                     let viewporter = reg.bind::<WpViewporter, _, _>(name, 1, qh, ());
