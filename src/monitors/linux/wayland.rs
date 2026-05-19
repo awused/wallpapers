@@ -152,6 +152,10 @@ impl Conn {
 
     // May briefly block
     pub async fn list_monitors(&mut self) -> Result<Vec<Monitor>> {
+        self.get_monitors(false).await
+    }
+
+    async fn get_monitors(&mut self, dirty_only: bool) -> Result<Vec<Monitor>> {
         // Be explicit about flushing and waiting, depending on program state we might have all
         // outputs ready but invalidated.
         self.roundtrip()?;
@@ -200,6 +204,7 @@ impl Conn {
             .state
             .outputs
             .iter_mut()
+            .filter(|(_name, out)| !dirty_only || !out.clean)
             .map(|(name, out)| {
                 out.clean = true;
                 // ready -> all of them have resolutions
@@ -220,32 +225,12 @@ impl Conn {
     // This should eventually return in case of a new monitor that needs a wallpaper in daemon
     // mode, maybe interactive too.
     pub async fn poll(&mut self) -> Result<Vec<Monitor>> {
-        while !self.state.outputs.values().any(|out| out.ready() && !out.clean) {
+        while !self.state.outputs.values().any(|out| !out.clean) {
             self.poll_once().await?;
         }
 
-        self.roundtrip()?;
-
-        Ok(self
-            .state
-            .outputs
-            .iter_mut()
-            .filter(|(_name, out)| out.ready() && !out.clean)
-            .map(|(name, out)| {
-                out.clean = true;
-                // ready -> all of them have resolutions
-                let (w, h) = out.res().unwrap();
-                Monitor {
-                    width: w as u32,
-                    height: h as u32,
-                    #[cfg(feature = "x11")]
-                    top: 0,
-                    #[cfg(feature = "x11")]
-                    left: 0,
-                    name: *name,
-                }
-            })
-            .collect())
+        // Only get the dirty ones, but make sure to trigger the fractional scale tickle
+        self.get_monitors(true).await
     }
 
     async fn poll_once(&mut self) -> Result<()> {
@@ -624,8 +609,10 @@ impl Dispatch<WlOutput, u32> for AppData {
             let output = state.outputs.get_mut(name).unwrap();
             if output.int_scale != factor {
                 output.int_scale = factor;
-                output.clean = false;
-                println!("Output {name} dirtied by new int scale {factor}");
+                if output.fract_scale.is_none() {
+                    output.clean = false;
+                    println!("Output {name} dirtied by new int scale {factor}");
+                }
             }
         }
 
@@ -712,6 +699,9 @@ impl Dispatch<ZwlrLayerSurfaceV1, u32> for AppData {
                 output.res = Some((width, height));
                 output.clean = false;
                 println!("Output {name} dirtied by Configure {width}x{height}");
+                // force us to wait for a fractional scale update, or trigger a repaint to get one
+                output.dummy_attempted = false;
+                output.fractional_scale = None;
             }
 
             proxy.ack_configure(serial);
