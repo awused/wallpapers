@@ -3,7 +3,7 @@ use std::ffi::CString;
 use std::io::ErrorKind;
 use std::os::fd::BorrowedFd;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::Duration;
 use std::{mem, process, ptr};
 
@@ -48,6 +48,8 @@ use crate::closing::closed;
 use crate::monitors::Monitor;
 use crate::processing::WORKER;
 use crate::wallpaper::OPTIMISTIC_CACHE;
+
+static HYPRLAND_BUG: AtomicBool = AtomicBool::new(false);
 
 pub fn init() -> Option<Conn> {
     let con = Connection::connect_to_env().ok()?;
@@ -177,6 +179,7 @@ impl Conn {
                 Err(t) => {
                     println!("Timed out 500ms");
                     let mut attempted = false;
+                    HYPRLAND_BUG.store(true, Ordering::Relaxed);
                     let monitors: Vec<_> = self.state.outputs.keys().copied().collect();
                     for k in monitors {
                         let o = self.state.outputs.get_mut(&k).unwrap();
@@ -389,7 +392,7 @@ impl Conn {
 
         if let Some(view) = &output.viewport {
             let unscaled = output.res.unwrap();
-            view.set_destination(unscaled.0 as i32, unscaled.1 as i32);
+            view.set_destination(unscaled.0 as _, unscaled.1 as _);
         } else {
             surface.set_buffer_scale(output.int_scale);
         }
@@ -437,14 +440,12 @@ impl Conn {
             (),
         );
 
-        let buf = pool.create_buffer(0, 1, 1, 4, Format::Xrgb8888, qh, ());
+        let buf = pool.create_buffer(0, 1, 1, 4, Format::Argb8888, qh, ());
         pool.destroy();
         let output = &self.state.outputs[&m];
         let surface = output.surface.as_ref().unwrap();
         surface.attach(Some(&buf), 0, 0);
-        if let Some(view) = &output.viewport {
-            view.set_destination(1, 1);
-        } else {
+        if output.viewport.is_none() {
             surface.set_buffer_scale(output.int_scale);
         }
         surface.commit();
@@ -649,7 +650,7 @@ impl Dispatch<WlOutput, u32> for AppData {
                 &surface,
                 Some(&output.wl_output),
                 zwlr_layer_shell_v1::Layer::Background,
-                "wall".to_string(),
+                "wallpaper".to_string(),
                 qh,
                 *name,
             );
@@ -700,8 +701,10 @@ impl Dispatch<ZwlrLayerSurfaceV1, u32> for AppData {
                 output.clean = false;
                 println!("Output {name} dirtied by Configure {width}x{height}");
                 // force us to wait for a fractional scale update, or trigger a repaint to get one
-                output.dummy_attempted = false;
-                output.fractional_scale = None;
+                if HYPRLAND_BUG.load(Ordering::Relaxed) {
+                    output.dummy_attempted = false;
+                    output.fractional_scale = None;
+                }
             }
 
             proxy.ack_configure(serial);
@@ -712,7 +715,7 @@ impl Dispatch<ZwlrLayerSurfaceV1, u32> for AppData {
 delegate_noop!(AppData: ignore WlBuffer);
 delegate_noop!(AppData: ignore WlCompositor);
 delegate_noop!(AppData: ignore WlRegion);
-// We don't care about format since Xrgb8888 _must_ be supported
+// We don't care about format since Xrgb8888/Argb8888 _must_ be supported
 delegate_noop!(AppData: ignore WlShm);
 delegate_noop!(AppData: ignore WlShmPool);
 delegate_noop!(AppData: ignore WlSurface);
