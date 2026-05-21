@@ -228,7 +228,7 @@ impl Conn {
     // This should eventually return in case of a new monitor that needs a wallpaper in daemon
     // mode, maybe interactive too.
     pub async fn poll(&mut self) -> Result<Vec<Monitor>> {
-        while !self.state.outputs.values().any(|out| !out.clean) {
+        while self.state.outputs.is_empty() || !self.state.outputs.values().any(|out| !out.clean) {
             self.poll_once().await?;
         }
 

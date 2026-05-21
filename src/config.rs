@@ -96,7 +96,7 @@ impl Display for ImageProperties {
             .map(|(a, b)| writeln!(f, "{a} = {b}"))
             .collect::<Result<Vec<_>, _>>()?;
 
-        if let Some(b) = self.background.as_ref() {
+        if let Some(ref b) = self.background {
             writeln!(f, "background = {}", colour_to_string(*b))?;
         }
 

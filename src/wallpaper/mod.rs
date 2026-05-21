@@ -320,7 +320,7 @@ impl<T: WallpaperID> Wallpaper<'_, T> {
                 .into_rgb8()
         }));
 
-        if let Some(ImageProperties { vertical, horizontal, .. }) = uf.props.as_ref()
+        if let Some(ImageProperties { ref vertical, ref horizontal, .. }) = uf.props
             && (vertical.is_some() || horizontal.is_some())
         {
             img = translate_image(img, vertical, horizontal);

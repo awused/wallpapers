@@ -99,7 +99,7 @@ impl WallpaperID for OriginalWallpaperID {
     fn upscaled_rel_path(&self, scale: NonZeroU8, ip: &Option<ImageProperties>) -> PathBuf {
         let mut p: OsString =
             self.0.file_name().expect("Specified wallpaper has no filename").into();
-        if let Some(ip) = ip.as_ref() {
+        if let Some(ip) = ip {
             p.push(ip.crop_pad_string());
             p.push("-");
             if let Some(denoise) = ip.denoise {
@@ -196,7 +196,7 @@ impl WallpaperID for TempWallpaperID<'_> {
 
     fn upscaled_rel_path(&self, scale: NonZeroU8, ip: &Option<ImageProperties>) -> PathBuf {
         let mut p: OsString = self.fname.clone().into();
-        if let Some(ip) = ip.as_ref() {
+        if let Some(ip) = ip {
             p.push(ip.crop_pad_string());
             p.push("-");
             if let Some(denoise) = ip.denoise {
