@@ -32,6 +32,9 @@ pub struct Config {
     #[cfg_attr(any(not(feature = "opencl"), test), allow(unused))]
     #[serde(default)]
     pub gpu_prefix: String,
+
+    #[serde(default)]
+    pub single_wallpaper: bool,
 }
 
 const fn one() -> usize {

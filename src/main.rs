@@ -271,13 +271,20 @@ async fn random(con: &mut Connection, monitors: Vec<Monitor>) -> Result<()> {
     };
 
     // https://github.com/rust-lang/rust-clippy/issues/9219
-    let selection: Vec<_> = shuffler
-        .try_unique_n(monitors.len())
-        .unwrap()
-        .unwrap()
-        .into_iter()
-        .cloned()
-        .collect();
+    let selection: Vec<_> = if !CONFIG.single_wallpaper {
+        shuffler
+            .try_unique_n(monitors.len())
+            .unwrap()
+            .unwrap()
+            .into_iter()
+            .cloned()
+            .collect()
+    } else {
+        let paper = shuffler.next().unwrap().unwrap();
+        let mut sel = Vec::with_capacity(monitors.len());
+        sel.resize_with(monitors.len(), || paper.clone());
+        sel
+    };
     let close_handle = thread::spawn(move || shuffler.close());
 
 
