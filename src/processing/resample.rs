@@ -12,7 +12,6 @@ mod opencl {
     use crate::wallpaper::Res;
 
     pub fn print_gpus() {
-        let mut index = 0;
         for platform in Platform::list() {
             println!("Platform: {platform}:\n");
 
@@ -21,17 +20,34 @@ mod opencl {
                 continue;
             };
 
-            devices.into_iter().for_each(|d| {
+            devices.iter().enumerate().for_each(|(index, d)| {
                 println!(
                     "Device #{index}: {}\n",
                     d.name().unwrap_or_else(|_| "Unnamed GPU".to_string()),
                 );
-                index += 1;
             });
+
+            #[cfg(not(test))]
+            let gpu_prefix = &crate::config::CONFIG.gpu_prefix;
+
+            #[cfg(test)]
+            let gpu_prefix = "";
+
+            if let Some((index, device)) = Device::list(platform, Some(DeviceType::GPU))
+                .iter()
+                .flatten()
+                .enumerate()
+                .find(|(_, d)| d.name().unwrap_or_default().starts_with(gpu_prefix))
+            {
+                println!(
+                    "Would select device at index {index}: {}",
+                    device.name().unwrap_or_else(|_| "Unnamed GPU".to_string())
+                )
+            }
         }
     }
 
-    pub static OPENCL_QUEUE: LazyLock<ProQue> = LazyLock::new(|| {
+    pub static OPENCL_QUEUE: LazyLock<ocl::Result<ProQue>> = LazyLock::new(|| {
         let resample_src = include_str!("resample.cl");
 
         #[cfg(not(test))]
@@ -48,17 +64,15 @@ mod opencl {
                 .flatten()
                 .find(|d| d.name().unwrap_or_default().starts_with(gpu_prefix))
             {
-                return ProQue::builder()
-                    .platform(platform)
-                    .device(device)
-                    .src(resample_src)
-                    .build()
-                    .unwrap_or_else(|_| {
-                        panic!(
-                            "Could not initialize OpenCL for GPU {}",
-                            device.name().unwrap_or_else(|msg| msg.to_string())
-                        )
-                    });
+                let res =
+                    ProQue::builder().platform(platform).device(device).src(resample_src).build();
+                if let Err(e) = &res {
+                    println!(
+                        "Could not initialize OpenCL for GPU {}: {e}",
+                        device.name().unwrap_or_else(|msg| msg.to_string())
+                    );
+                }
+                return res;
             }
         }
 
@@ -69,7 +83,7 @@ mod opencl {
         // The code in resample.rs is faster than running resample.cl on the CPU, so this is a bad
         // idea.
         println!("Unable to find suitable GPU for OpenCL");
-        ProQue::builder().src(resample_src).build().unwrap()
+        Ok(ProQue::builder().src(resample_src).build().unwrap())
     });
 
     pub fn resize_opencl(
@@ -78,7 +92,8 @@ mod opencl {
         target_res: Res,
         channels: u8,
     ) -> ocl::Result<Vec<u8>> {
-        let mut pro_que = OPENCL_QUEUE.clone();
+        let mut pro_que =
+            OPENCL_QUEUE.as_ref().map_err(|e| ocl::Error::from(e.to_string()))?.clone();
         if target_res.w == 0 || target_res.h == 0 {
             return Ok(Vec::new());
         }

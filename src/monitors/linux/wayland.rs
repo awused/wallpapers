@@ -692,7 +692,7 @@ impl Dispatch<ZwlrLayerSurfaceV1, u32> for AppData {
         event: zwlr_layer_surface_v1::Event,
         name: &u32,
         _conn: &Connection,
-        _qhandle: &QueueHandle<Self>,
+        qh: &QueueHandle<Self>,
     ) {
         if let zwlr_layer_surface_v1::Event::Configure { serial, width, height } = event {
             let output = state.outputs.get_mut(name).unwrap();
@@ -701,9 +701,16 @@ impl Dispatch<ZwlrLayerSurfaceV1, u32> for AppData {
                 output.clean = false;
                 println!("Output {name} dirtied by Configure {width}x{height}");
                 // force us to wait for a fractional scale update, or trigger a repaint to get one
+                // TODO -- Can drop this after 0.55.2 and validating it
                 if HYPRLAND_BUG.load(Ordering::Relaxed) {
                     output.dummy_attempted = false;
                     output.fractional_scale = None;
+                    output.fract_scale.take().unwrap().destroy();
+
+                    let manager = state.fractional.as_ref().unwrap();
+                    let scale =
+                        manager.get_fractional_scale(output.surface.as_ref().unwrap(), qh, *name);
+                    output.fract_scale = Some(scale);
                 }
             }
 
