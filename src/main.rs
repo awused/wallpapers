@@ -72,10 +72,19 @@ pub struct Opt {
 #[derive(Debug, Parser)]
 enum Command {
     /// Display a random wallpaper on each monitor.
-    Random,
+    Random {
+        /// Print selected wallpapers to stdout.
+        /// Does not work on wayland since this is not the daemon process.
+        #[arg(long)]
+        print: bool,
+    },
     /// Run as a pseudo-daemon, listening for updates on SIGUSR1.
     #[cfg(unix)]
-    Daemon,
+    Daemon {
+        /// Print selected wallpapers to stdout.
+        #[arg(long)]
+        print: bool,
+    },
     /// Prepopulate the cache of stale files and remove stale files.
     Sync {
         /// Also remove all wallpapers for resolutions that don't match any current monitors.
@@ -146,9 +155,9 @@ async fn main() {
     color_eyre::install().unwrap();
 
     match &OPTIONS.cmd {
-        Command::Random => random_command().await.unwrap(),
+        Command::Random { print } => random_command(*print).await.unwrap(),
         #[cfg(unix)]
-        Command::Daemon => daemon::run().await,
+        Command::Daemon { print } => daemon::run(*print).await,
         Command::Sync { clean_monitors } => sync(*clean_monitors).await,
         #[cfg(any(not(unix), feature = "x11"))]
         Command::Preview {
@@ -189,7 +198,7 @@ async fn main() {
 }
 
 
-async fn random_command() -> Result<()> {
+async fn random_command(print: bool) -> Result<()> {
     #[cfg(all(unix, not(feature = "x11")))]
     {
         pkill_wayland();
@@ -204,7 +213,7 @@ async fn random_command() -> Result<()> {
         }
 
         let monitors = con.list_monitors().await?;
-        random(&mut con, monitors).await
+        random(&mut con, monitors, print).await
     }
 }
 
@@ -227,7 +236,7 @@ fn pkill_wayland() {
     }
 }
 
-async fn random(con: &mut Connection, monitors: Vec<Monitor>) -> Result<()> {
+async fn random(con: &mut Connection, monitors: Vec<Monitor>, print: bool) -> Result<()> {
     if monitors.is_empty() {
         println!("No monitors detected");
         return Ok(());
@@ -285,8 +294,8 @@ async fn random(con: &mut Connection, monitors: Vec<Monitor>) -> Result<()> {
         sel.resize_with(monitors.len(), || paper.clone());
         sel
     };
-    let close_handle = thread::spawn(move || shuffler.close());
 
+    let close_handle = thread::spawn(move || shuffler.close());
 
     // Merge any duplicate wallpapers.
     let mut wids = Vec::new();
@@ -294,6 +303,10 @@ async fn random(con: &mut Connection, monitors: Vec<Monitor>) -> Result<()> {
 
     // O(n^2) but the real number of monitors will always be tiny
     'outer: for (wid, m) in selection.into_iter().zip(monitors) {
+        if print {
+            println!("Selected {:?} for monitor {m:?}", wid.original_abs_path());
+        }
+
         for (i, w) in wids.iter().enumerate() {
             if wid == *w {
                 grouped_monitors[i].push(m);

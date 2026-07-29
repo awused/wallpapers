@@ -17,16 +17,16 @@ use crate::processing::SMALL_POOLS;
 use crate::random;
 use crate::wallpaper::clear_caches;
 
-pub async fn run() {
+pub async fn run(print: bool) {
     // Prioritize a small footprint over completing things quickly
     SMALL_POOLS.store(true, Ordering::Relaxed);
 
-    if let Err(e) = tokio_run().await {
+    if let Err(e) = tokio_run(print).await {
         println!("Daemon exited with error {e}");
     }
 }
 
-async fn tokio_run() -> Result<()> {
+async fn tokio_run(print: bool) -> Result<()> {
     let mut signals = Signals::new(TERM_SIGNALS)?;
     signals.handle().add_signal(SIGUSR1)?;
     signals.handle().add_signal(SIGUSR2)?;
@@ -36,7 +36,7 @@ async fn tokio_run() -> Result<()> {
 
     'outer: loop {
         {
-            let mut random = pin!(random(&mut con, monitors));
+            let mut random = pin!(random(&mut con, monitors, print));
 
             'inner: loop {
                 select! {
