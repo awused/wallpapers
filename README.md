@@ -21,8 +21,6 @@ Upscaling has additional default requirements, but can be configured to use othe
 
 Alternative upscalers can be configured in place of waifu2x-ncnn-vulkan, see [aw-upscale](https://github.com/awused/aw-upscale).
 
-If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulkan is on your PATH. The directory containing the waifu2x-ncnn-vulkan binary should also contain the [models-cunet](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models/models-cunet) directory.
-
 ### Limitations
 
 * Limited to one X server
@@ -46,6 +44,9 @@ I've included some scripts and registry files for context menu entries that I fi
 OpenCL may require additional packages depending on GPU vendor. Install with `--no-default-features --features x11` to disable opencl support while keeping x11 if there are problems.
 
 See the [aw-upscale](https://github.com/awused/aw-upscale) readme if there are further issues like black images.
+
+If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulkan is on your PATH. The directory containing the waifu2x-ncnn-vulkan binary should also contain the [models-cunet](https://github.com/nihui/waifu2x-ncnn-vulkan/tree/master/models/models-cunet) directory.
+
 
 ## Wayland
 
@@ -96,6 +97,26 @@ One thing sync does not do by default is remove cached images for monitors that 
 Interactively preview a wallpaper on all your monitors, reusing processed files so you can quickly dial in your settings. Using `vertical` and `horizontal` offsets are more efficient than cropping for this as changes will not need to be run through waifu2x. Use the print command to print out a snippet of TOML that can be copied into the configuration file. Multiple commands can be run at once if they're separated by ";", e.g. "h 10; v 10".
 
 On Windows you'll want probably want to build a separate executable without hiding the console. This can be done by not specifying `--features windows-quiet`. The other option is to use a wrapper program when calling wallpapers.exe from a scheduled task.
+
+Commands | Explanation
+-------------------- | ----------
+`vertical` / `v` P | Translate the image vertically by a percentage. Can be negative or a decimal. More efficient than `top`/`bottom` when making small changes repeatedly to dial in settings.
+`horizontal` / `h` P | Translate the image horizontally by a percentage. Can be negative or a decimal. More efficient than `right`/`left` when making small changes repeatedly to dial in settings.
+`top` / `t` N | Crop (positive) or pad (negative) the top of the image, before upscaling, by an integer number of pixels.
+`bottom` / `b` N | Crop (positive) or pad (negative) the bottom of the image, before upscaling, by an integer of pixels.
+`right` / `r` N | Crop (positive) or pad (negative) the right side of the image, before upscaling, by an integer number of pixels.
+`left` / `l` N | Crop (positive) or pad (negative) the left side of the image, before upscaling, by an integer of pixels.
+`background` bg | Change the background of the image for transparent images or padding. Accepts black, white, and hexadecimal RGB.
+`denoise` | `d` N | change the denoising level. The exact meaning is controlled by the upscaler.
+`clear` | Zero out all settings, reverting to the default.
+`reset` | Reset all settings to their initial state. If this is used on an existing wallpaper it will revert to the last saved settings, ignoring per-aspect ratio settings. Otherwise it is equivalent to `clear`
+`print` | Print the current settings.
+`install` name | Install the wallpaper into the cache, using the given name as a prefix, saving the current settings. If a subdirectory with the same name exists, it will be placed inside.
+`install` name resolution | Install the wallpaper into the cache but save the current settings as specific only to the given resolution's aspect ratio.
+`update` | Update the settings for the current wallpaper. Does not affect any per-aspect ratio settings.
+`update` resolution | Update the settings for the current wallpaper for the given aspect ratio.
+`exit` | Exit cleanly.
+
 
 ### Preview
 
