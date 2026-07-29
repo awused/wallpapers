@@ -31,8 +31,6 @@ If you have trouble getting upscaling to work, make sure that waifu2x-ncnn-vulka
 
 `cargo install --git https://github.com/awused/wallpapers --locked`
 
-OpenCL may require additional packages depending on GPU vendor. Install with `--no-default-features --features x11` to disable opencl support while keeping x11 if there are problems.
-
 Install with `--features windows-quiet` on Windows to avoid spawning a visible console Window. Note that this will also disable stdout.
 
 Fill in wallpapers.toml and copy it to your choice of /usr/local/etc/wallpapers.toml, /usr/etc/wallpapers.toml, or $HOME/.wallpapers.toml. On Windows it's easiest to just drop it into the same directory as the executable.
@@ -42,6 +40,12 @@ Run `wallpapers sync` to prepopulate the cache for your current set of wallpaper
 `wallpapers help` will display additional usage information.
 
 I've included some scripts and registry files for context menu entries that I find useful under [windows](windows) and [linux](linux). They must be edited before use.
+
+## Troubleshooting
+
+OpenCL may require additional packages depending on GPU vendor. Install with `--no-default-features --features x11` to disable opencl support while keeping x11 if there are problems.
+
+See the [aw-upscale](https://github.com/awused/aw-upscale) readme if there are further issues like black images.
 
 ## Wayland
 
